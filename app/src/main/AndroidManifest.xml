@@ -8,6 +8,25 @@
         android:name="android.software.live_wallpaper"
         android:required="true" />
 
+    <!-- Android 11+ hides intent handlers unless the app declares what it queries. -->
+    <queries>
+        <intent>
+            <action android:name="android.service.wallpaper.LIVE_WALLPAPER_CHOOSER" />
+        </intent>
+        <intent>
+            <action android:name="android.service.wallpaper.CHANGE_LIVE_WALLPAPER" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.WALLPAPER_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SET_WALLPAPER" />
+        </intent>
+        <package android:name="com.android.wallpaper.livepicker" />
+        <package android:name="com.android.thememanager" />
+        <package android:name="com.google.android.apps.wallpaper" />
+    </queries>
+
     <application
         android:allowBackup="false"
         android:hardwareAccelerated="true"
@@ -26,6 +45,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".HologramPreviewActivity"
+            android:exported="false"
+            android:label="Просмотр превращения"
+            android:screenOrientation="portrait" />
 
         <service
             android:name=".ParallaxWallpaperService"

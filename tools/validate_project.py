@@ -35,6 +35,7 @@ def png_size(path: pathlib.Path) -> tuple[int, int]:
 
 def main() -> None:
     activity_path = ROOT / "app/src/main/java/com/andrej/parallaxwallpaper/SettingsActivity.java"
+    preview_path = ROOT / "app/src/main/java/com/andrej/parallaxwallpaper/HologramPreviewActivity.java"
     service_path = ROOT / "app/src/main/java/com/andrej/parallaxwallpaper/ParallaxWallpaperService.java"
     policy_path = ROOT / "app/src/main/java/com/andrej/parallaxwallpaper/SceneSelectionPolicy.java"
     required = [
@@ -44,6 +45,7 @@ def main() -> None:
         ROOT / "app/src/main/AndroidManifest.xml",
         ROOT / "app/src/main/res/xml/wallpaper.xml",
         activity_path,
+        preview_path,
         service_path,
         policy_path,
         ROOT / "app/src/main/java/com/andrej/parallaxwallpaper/HologramBlend.java",
@@ -106,7 +108,12 @@ def main() -> None:
 
     service = service_path.read_text(encoding="utf-8")
     activity = activity_path.read_text(encoding="utf-8")
-    for source_name, source in (("service", service), ("activity", activity)):
+    preview = preview_path.read_text(encoding="utf-8")
+    for source_name, source in (
+            ("service", service),
+            ("activity", activity),
+            ("preview", preview),
+    ):
         if source.count("{") != source.count("}"):
             fail(f"unbalanced braces in {source_name}")
         if re.search(r"https?://", source):
@@ -126,6 +133,12 @@ def main() -> None:
         fail("built-in dragon assets are not wired to the engine")
     if "BUILTIN_DRAGON_HOLOGRAM" not in service or "HologramBlend.fillWeights" not in service:
         fail("three-state gyroscope hologram is not wired to the engine")
+    if "HologramPreviewActivity" not in manifest:
+        fail("in-app hologram preview activity is not registered")
+    if "HologramBlend.fillWeights" not in preview:
+        fail("in-app preview does not use the locked three-state blend")
+    if "ACTION_CHANGE_LIVE_WALLPAPER" not in preview:
+        fail("in-app preview cannot launch the direct wallpaper installer")
 
     digest = hashlib.sha256()
     for path in sorted(path for path in ROOT.rglob("*") if path.is_file()):
@@ -142,6 +155,8 @@ def main() -> None:
     print("PASS: four-scene auto/pages/random selection is present")
     print("PASS: real-time protected depth mesh is present")
     print("PASS: three-state gyroscope transformation is present")
+    print("PASS: firmware-independent full-screen preview is present")
+    print("PASS: direct live-wallpaper installer fallback is present")
     print(f"PROJECT_SHA256: {digest.hexdigest()}")
 
 

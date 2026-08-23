@@ -94,24 +94,22 @@ public final class SettingsActivity extends Activity {
         transformationHint.setPadding(0, 0, 0, dp(14));
         root.addView(transformationHint, matchWrap());
 
-        addSectionTitle(root, "Установка живых обоев");
+        addSectionTitle(root, "Проверка и установка");
 
-        Button systemChooser = button("1. ОТКРЫТЬ СПИСОК ЖИВЫХ ОБОЕВ");
-        systemChooser.setOnClickListener(v -> openSystemLiveWallpaperList());
-        root.addView(systemChooser, matchWrapWithMargin(6));
+        Button internalPreview = button("1. ПРОВЕРИТЬ ЭФФЕКТ ВНУТРИ PARALLAX");
+        internalPreview.setOnClickListener(v -> startActivity(
+                new Intent(this, HologramPreviewActivity.class)
+        ));
+        root.addView(internalPreview, matchWrapWithMargin(6));
 
-        Button directPreview = button("2. ОТКРЫТЬ PARALLAX НАПРЯМУЮ");
-        directPreview.setOnClickListener(v -> openDirectWallpaperPreview());
-        root.addView(directPreview, matchWrapWithMargin(6));
-
-        Button joyuiSettings = button("3. ОТКРЫТЬ НАСТРОЙКИ ОБОЕВ JOYUI");
-        joyuiSettings.setOnClickListener(v -> openJoyuiWallpaperSettings());
-        root.addView(joyuiSettings, matchWrapWithMargin(6));
+        Button directInstall = button("2. УСТАНОВИТЬ КАК ЖИВЫЕ ОБОИ");
+        directInstall.setOnClickListener(v -> openDirectWallpaperPreview());
+        root.addView(directInstall, matchWrapWithMargin(6));
 
         TextView installHint = text(
-                "Сначала нажмите кнопку 2. Новая версия запускает системный экран явно и " +
-                        "не разрешает Wallcraft перехватить установку. Кнопка 1 открывает " +
-                        "полный системный список.",
+                "Кнопка 1 всегда показывает эффект внутри приложения и не зависит от JOYUI. " +
+                        "Кнопка 2 напрямую передаёт Android компонент Parallax; Wallcraft " +
+                        "в этом вызове не используется.",
                 13,
                 Color.rgb(255, 210, 130)
         );
@@ -310,8 +308,20 @@ public final class SettingsActivity extends Activity {
         ComponentName component = new ComponentName(this, ParallaxWallpaperService.class);
         Intent intent = new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER);
         intent.putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, component);
+        try {
+            startActivity(intent);
+            updateInstallerStatus("Android получил прямой запрос на установку Parallax");
+            return;
+        } catch (Exception ignored) {
+            // JOYUI may hide the handler from queries; explicit system fallbacks are tried next.
+        }
         if (!launchSystemHandler(intent, true)) {
-            showInstallerFailure("Системный экран подтверждения Parallax не найден");
+            Intent chooser = new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER);
+            if (!launchSystemHandler(chooser, false)) {
+                showInstallerFailure(
+                        "JOYUI не предоставляет экран установки. Используйте внутренний просмотр"
+                );
+            }
         }
     }
 
