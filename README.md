@@ -2,7 +2,7 @@
 
 Android live wallpaper for four gyroscope-controlled mythic-beast scenes.
 
-Version 0.5.1 keeps the true three-state Dragon tilt effect and adds JOYUI-specific
+Version 0.5.2 keeps the true three-state Dragon tilt effect and adds JOYUI-specific
 deep installer diagnostics plus trusted Google Wallpapers, ThemeManager, and MiWallpaper checks:
 woman on the throne at the left extreme, standing woman in mist at the calibrated
 center, and the full Azure Dragon at the right extreme. The three locked frames are
@@ -27,6 +27,8 @@ edited, recompressed, overwritten, or uploaded.
   Google Wallpapers, ThemeManager, and MiWallpaper.
 - One-tap access to Google Wallpapers app details makes clearing a stale picker cache possible
   without changing any Parallax image or animation asset.
+- Direct explicit routes target the enabled MiWallpaperPreview and ThemeManager wallpaper
+  settings components reported by the Black Shark JOYUI diagnostics.
 - Auto selection: launcher pages when available, random fallback otherwise.
 - Explicit page and random modes, plus manual random scene switching.
 - Smooth 280 ms crossfade when the active animal changes.
