@@ -4,6 +4,9 @@
     <uses-feature
         android:name="android.hardware.sensor.gyroscope"
         android:required="false" />
+    <uses-feature
+        android:name="android.software.live_wallpaper"
+        android:required="true" />
 
     <application
         android:allowBackup="false"
@@ -31,6 +34,7 @@
             android:permission="android.permission.BIND_WALLPAPER">
             <intent-filter>
                 <action android:name="android.service.wallpaper.WallpaperService" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <meta-data
                 android:name="android.service.wallpaper"
