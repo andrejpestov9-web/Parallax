@@ -23,7 +23,7 @@ public final class KustomPackActivity extends Activity {
     private static final String KLWP_PACKAGE = "org.kustom.wallpaper";
     private static final String KLWP_EDITOR = "org.kustom.lib.editor.WpAdvancedEditorActivity";
     private static final String PRESET_URI =
-        "kfile://com.andrej.parallaxwallpaper/wallpapers/Dragon_Hologram_Gyro.klwp.zip";
+        "kfile://com.andrej.dragonhologrampack/wallpapers/Dragon_Hologram_Gyro.klwp.zip";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
