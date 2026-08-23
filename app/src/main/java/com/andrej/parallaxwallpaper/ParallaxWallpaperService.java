@@ -36,6 +36,7 @@ public final class ParallaxWallpaperService extends WallpaperService {
     public static final String KEY_CALIBRATION_NONCE = "calibration_nonce";
     public static final String KEY_RANDOM_NONCE = "random_nonce";
     public static final String KEY_SELECTION_MODE = "selection_mode";
+    public static final String KEY_ENGINE_DIAGNOSTICS = "engine_diagnostics";
 
     private static final String KEY_IMAGE_URI_LEGACY = "image_uri";
     private static final String KEY_IMAGE_URI_PREFIX = "image_uri_";
@@ -132,6 +133,7 @@ public final class ParallaxWallpaperService extends WallpaperService {
         private int loadGeneration;
         private long calibrationNonce;
         private long randomNonce;
+        private boolean framePostedForSurface;
 
         private final Runnable frameRunnable = new Runnable() {
             @Override
@@ -161,6 +163,7 @@ public final class ParallaxWallpaperService extends WallpaperService {
             super.onCreate(surfaceHolder);
             setOffsetNotificationsEnabled(true);
             preferences.registerOnSharedPreferenceChangeListener(this);
+            recordEngineState("ENGINE_CREATED");
             selectSceneForCurrentState(true);
         }
 
@@ -180,6 +183,7 @@ public final class ParallaxWallpaperService extends WallpaperService {
         @Override
         public void onVisibilityChanged(boolean isVisible) {
             visible = isVisible;
+            recordEngineState(isVisible ? "VISIBLE" : "HIDDEN");
             mainHandler.removeCallbacks(frameRunnable);
             if (visible) {
                 calibrated = false;
@@ -201,6 +205,8 @@ public final class ParallaxWallpaperService extends WallpaperService {
         public void onSurfaceCreated(SurfaceHolder holder) {
             super.onSurfaceCreated(holder);
             surfaceReady = true;
+            framePostedForSurface = false;
+            recordEngineState("SURFACE_CREATED");
             drawFrame();
         }
 
@@ -208,6 +214,8 @@ public final class ParallaxWallpaperService extends WallpaperService {
         public void onSurfaceChanged(SurfaceHolder holder, int format, int width, int height) {
             super.onSurfaceChanged(holder, format, width, height);
             surfaceReady = true;
+            framePostedForSurface = false;
+            recordEngineState("SURFACE_CHANGED " + width + "x" + height);
             drawFrame();
         }
 
@@ -219,6 +227,8 @@ public final class ParallaxWallpaperService extends WallpaperService {
         @Override
         public void onSurfaceDestroyed(SurfaceHolder holder) {
             surfaceReady = false;
+            framePostedForSurface = false;
+            recordEngineState("SURFACE_DESTROYED");
             super.onSurfaceDestroyed(holder);
         }
 
@@ -430,6 +440,8 @@ public final class ParallaxWallpaperService extends WallpaperService {
                         return;
                     }
                     replaceHologram(loadedComplete ? loaded : null);
+                    recordEngineState(loadedComplete
+                            ? "FRAMES_LOADED" : "FRAME_LOAD_FAILED");
                 });
             });
         }
@@ -526,12 +538,12 @@ public final class ParallaxWallpaperService extends WallpaperService {
             if (!surfaceReady || destroyed) return;
             SurfaceHolder holder = getSurfaceHolder();
             Canvas canvas = null;
+            boolean renderSucceeded = false;
             try {
-                try {
-                    canvas = holder.lockHardwareCanvas();
-                } catch (IllegalArgumentException | IllegalStateException exception) {
-                    canvas = holder.lockCanvas();
-                }
+                // JOYUI 13's MiWallpaperPreview exposes a software-only preview surface.
+                // lockHardwareCanvas() may succeed partially and still leave a black frame,
+                // so the wallpaper service deliberately uses the universally supported path.
+                canvas = holder.lockCanvas();
                 if (canvas == null) return;
                 if (builtinHologramActive && hologramReady()) {
                     drawHologram(canvas);
@@ -540,9 +552,31 @@ public final class ParallaxWallpaperService extends WallpaperService {
                 } else {
                     drawSourceImage(canvas);
                 }
+                renderSucceeded = true;
+            } catch (RuntimeException error) {
+                recordEngineState("DRAW_FAILED " + error.getClass().getSimpleName());
             } finally {
-                if (canvas != null) holder.unlockCanvasAndPost(canvas);
+                if (canvas != null) {
+                    try {
+                        holder.unlockCanvasAndPost(canvas);
+                        if (renderSucceeded && !framePostedForSurface) {
+                            framePostedForSurface = true;
+                            recordEngineState("FRAME_POSTED "
+                                    + canvas.getWidth() + "x" + canvas.getHeight());
+                        }
+                    } catch (RuntimeException error) {
+                        recordEngineState("POST_FAILED "
+                                + error.getClass().getSimpleName());
+                    }
+                }
             }
+        }
+
+        private void recordEngineState(String state) {
+            preferences.edit().putString(
+                    KEY_ENGINE_DIAGNOSTICS,
+                    state + " @" + SystemClock.uptimeMillis()
+            ).apply();
         }
 
         private boolean hologramReady() {
