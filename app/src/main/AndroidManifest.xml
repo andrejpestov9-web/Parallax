@@ -22,8 +22,13 @@
         <intent>
             <action android:name="android.intent.action.SET_WALLPAPER" />
         </intent>
+        <intent>
+            <action android:name="android.service.wallpaper.WallpaperService" />
+        </intent>
         <package android:name="com.android.wallpaper.livepicker" />
         <package android:name="com.android.thememanager" />
+        <package android:name="com.miui.miwallpaper" />
+        <package android:name="com.miui.android.fashiongallery" />
         <package android:name="com.google.android.apps.wallpaper" />
     </queries>
 
@@ -51,6 +56,11 @@
             android:exported="false"
             android:label="Просмотр превращения"
             android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".WallpaperDiagnosticsActivity"
+            android:exported="false"
+            android:label="Диагностика установки обоев" />
 
         <service
             android:name=".ParallaxWallpaperService"
