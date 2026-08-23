@@ -228,9 +228,9 @@ public final class HologramPreviewActivity extends Activity implements SensorEve
             startActivity(chooser);
         } catch (Exception ignored) {
             Toast.makeText(this,
-                    "JOYUI не предоставляет экран установки живых обоев. " +
-                            "Внутренний просмотр продолжает работать.",
+                    "Экран установки не найден. Открываю диагностику JOYUI.",
                     Toast.LENGTH_LONG).show();
+            startActivity(new Intent(this, WallpaperDiagnosticsActivity.class));
         }
     }
 
