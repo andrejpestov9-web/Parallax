@@ -127,6 +127,12 @@ public final class WallpaperDiagnosticsActivity extends Activity {
                         ? "YES" : "NO")
                 .append("\n\n");
 
+        String engineState = getSharedPreferences(
+                ParallaxWallpaperService.PREFS,
+                MODE_PRIVATE
+        ).getString(ParallaxWallpaperService.KEY_ENGINE_DIAGNOSTICS, "NEVER_STARTED");
+        builder.append("LAST ENGINE STATE: ").append(engineState).append("\n\n");
+
         appendOwnService(builder, packageManager);
         appendIntentHandlers(builder, packageManager,
                 "CHANGE_LIVE_WALLPAPER",
