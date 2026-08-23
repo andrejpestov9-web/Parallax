@@ -36,6 +36,7 @@ def png_size(path: pathlib.Path) -> tuple[int, int]:
 def main() -> None:
     activity_path = ROOT / "app/src/main/java/com/andrej/parallaxwallpaper/SettingsActivity.java"
     preview_path = ROOT / "app/src/main/java/com/andrej/parallaxwallpaper/HologramPreviewActivity.java"
+    diagnostics_path = ROOT / "app/src/main/java/com/andrej/parallaxwallpaper/WallpaperDiagnosticsActivity.java"
     service_path = ROOT / "app/src/main/java/com/andrej/parallaxwallpaper/ParallaxWallpaperService.java"
     policy_path = ROOT / "app/src/main/java/com/andrej/parallaxwallpaper/SceneSelectionPolicy.java"
     required = [
@@ -46,6 +47,7 @@ def main() -> None:
         ROOT / "app/src/main/res/xml/wallpaper.xml",
         activity_path,
         preview_path,
+        diagnostics_path,
         service_path,
         policy_path,
         ROOT / "app/src/main/java/com/andrej/parallaxwallpaper/HologramBlend.java",
@@ -109,10 +111,12 @@ def main() -> None:
     service = service_path.read_text(encoding="utf-8")
     activity = activity_path.read_text(encoding="utf-8")
     preview = preview_path.read_text(encoding="utf-8")
+    diagnostics = diagnostics_path.read_text(encoding="utf-8")
     for source_name, source in (
             ("service", service),
             ("activity", activity),
             ("preview", preview),
+            ("diagnostics", diagnostics),
     ):
         if source.count("{") != source.count("}"):
             fail(f"unbalanced braces in {source_name}")
@@ -135,10 +139,16 @@ def main() -> None:
         fail("three-state gyroscope hologram is not wired to the engine")
     if "HologramPreviewActivity" not in manifest:
         fail("in-app hologram preview activity is not registered")
+    if "WallpaperDiagnosticsActivity" not in manifest:
+        fail("JOYUI diagnostics activity is not registered")
     if "HologramBlend.fillWeights" not in preview:
         fail("in-app preview does not use the locked three-state blend")
     if "ACTION_CHANGE_LIVE_WALLPAPER" not in preview:
         fail("in-app preview cannot launch the direct wallpaper installer")
+    if "WallpaperService.SERVICE_INTERFACE" not in diagnostics:
+        fail("diagnostics does not verify WallpaperService discovery")
+    if "com.google.android.apps.wallpaper" not in activity:
+        fail("trusted Google Wallpapers fallback is missing")
 
     digest = hashlib.sha256()
     for path in sorted(path for path in ROOT.rglob("*") if path.is_file()):
@@ -157,6 +167,7 @@ def main() -> None:
     print("PASS: three-state gyroscope transformation is present")
     print("PASS: firmware-independent full-screen preview is present")
     print("PASS: direct live-wallpaper installer fallback is present")
+    print("PASS: JOYUI on-device diagnostics is present")
     print(f"PROJECT_SHA256: {digest.hexdigest()}")
 
 
