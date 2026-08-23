@@ -7,6 +7,7 @@ import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -26,14 +27,17 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.List;
+import java.util.Locale;
 
 /** Reports the wallpaper components that are actually exposed by the current JOYUI build. */
 public final class WallpaperDiagnosticsActivity extends Activity {
     private static final String GOOGLE_WALLPAPERS = "com.google.android.apps.wallpaper";
+    private static final String THEME_MANAGER = "com.android.thememanager";
+    private static final String MI_WALLPAPER = "com.miui.miwallpaper";
     private static final String[] KNOWN_PACKAGES = {
             "com.android.wallpaper.livepicker",
-            "com.android.thememanager",
-            "com.miui.miwallpaper",
+            THEME_MANAGER,
+            MI_WALLPAPER,
             "com.miui.android.fashiongallery",
             GOOGLE_WALLPAPERS
     };
@@ -79,6 +83,18 @@ public final class WallpaperDiagnosticsActivity extends Activity {
         Button google = button("ОТКРЫТЬ GOOGLE WALLPAPERS");
         google.setOnClickListener(v -> openGoogleWallpapers());
         root.addView(google, matchWrapWithMargin(6));
+
+        Button googleDetails = button("СВЕДЕНИЯ / КЭШ GOOGLE WALLPAPERS");
+        googleDetails.setOnClickListener(v -> openPackageDetails(GOOGLE_WALLPAPERS));
+        root.addView(googleDetails, matchWrapWithMargin(6));
+
+        Button themes = button("ОТКРЫТЬ ТЕМЫ JOYUI");
+        themes.setOnClickListener(v -> openPackage(THEME_MANAGER, "Темы JOYUI"));
+        root.addView(themes, matchWrapWithMargin(6));
+
+        Button miWallpaper = button("ОТКРЫТЬ MI WALLPAPER");
+        miWallpaper.setOnClickListener(v -> openPackage(MI_WALLPAPER, "Mi Wallpaper"));
+        root.addView(miWallpaper, matchWrapWithMargin(6));
 
         Button settings = button("ОТКРЫТЬ СВЕДЕНИЯ О PARALLAX");
         settings.setOnClickListener(v -> openAppDetails());
@@ -130,6 +146,12 @@ public final class WallpaperDiagnosticsActivity extends Activity {
             builder.append("- ").append(packageName).append(": ")
                     .append(packageState(packageManager, packageName)).append('\n');
         }
+
+        builder.append("\nWALLPAPER ACTIVITY CANDIDATES\n");
+        builder.append("Copy this complete section after installing the APK.\n\n");
+        appendPackageActivities(builder, packageManager, GOOGLE_WALLPAPERS);
+        appendPackageActivities(builder, packageManager, THEME_MANAGER);
+        appendPackageActivities(builder, packageManager, MI_WALLPAPER);
 
         report = builder.toString();
         reportView.setText(report);
@@ -208,12 +230,72 @@ public final class WallpaperDiagnosticsActivity extends Activity {
         }
     }
 
+    private void appendPackageActivities(StringBuilder builder,
+                                         PackageManager packageManager,
+                                         String packageName) {
+        builder.append(packageName).append('\n');
+        try {
+            PackageInfo info = packageManager.getPackageInfo(
+                    packageName,
+                    PackageManager.GET_ACTIVITIES
+                            | PackageManager.MATCH_DISABLED_COMPONENTS
+            );
+            builder.append("Version: ").append(info.versionName == null
+                    ? "unknown" : info.versionName).append(" (")
+                    .append(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                            ? info.getLongVersionCode() : info.versionCode)
+                    .append(")\n");
+
+            Intent launch = packageManager.getLaunchIntentForPackage(packageName);
+            builder.append("Launch activity: ")
+                    .append(launch == null || launch.getComponent() == null
+                            ? "NONE" : launch.getComponent().flattenToShortString())
+                    .append('\n');
+
+            ActivityInfo[] activities = info.activities;
+            int total = activities == null ? 0 : activities.length;
+            int candidates = 0;
+            builder.append("Declared activities: ").append(total).append('\n');
+            if (activities != null) {
+                for (ActivityInfo activity : activities) {
+                    if (!isWallpaperCandidate(activity.name)) continue;
+                    candidates++;
+                    builder.append("  - ").append(activity.name)
+                            .append(activity.exported ? " [exported]" : " [private]")
+                            .append(activity.enabled ? " [enabled]" : " [disabled]")
+                            .append('\n');
+                }
+            }
+            builder.append("Matching candidates: ").append(candidates).append("\n\n");
+        } catch (PackageManager.NameNotFoundException error) {
+            builder.append("NOT FOUND\n\n");
+        } catch (RuntimeException error) {
+            builder.append("READ FAILED: ")
+                    .append(error.getClass().getSimpleName()).append("\n\n");
+        }
+    }
+
+    private boolean isWallpaperCandidate(String activityName) {
+        if (activityName == null) return false;
+        String normalized = activityName.toLowerCase(Locale.ROOT);
+        return normalized.contains("wallpaper")
+                || normalized.contains("livepicker")
+                || normalized.contains("livewallpaper")
+                || normalized.contains("preview")
+                || normalized.contains("picker")
+                || normalized.contains("theme")
+                || normalized.contains("customization");
+    }
+
     private void openGoogleWallpapers() {
-        PackageManager packageManager = getPackageManager();
-        Intent launch = packageManager.getLaunchIntentForPackage(GOOGLE_WALLPAPERS);
+        openPackage(GOOGLE_WALLPAPERS, "Google Wallpapers");
+    }
+
+    private void openPackage(String packageName, String label) {
+        Intent launch = getPackageManager().getLaunchIntentForPackage(packageName);
         if (launch == null) {
             Toast.makeText(this,
-                    "Google Wallpapers не найден или не имеет запускаемого экрана",
+                    label + " не найден или не имеет запускаемого экрана",
                     Toast.LENGTH_LONG).show();
             return;
         }
@@ -221,15 +303,19 @@ public final class WallpaperDiagnosticsActivity extends Activity {
             startActivity(launch);
         } catch (Exception error) {
             Toast.makeText(this,
-                    "JOYUI заблокировал запуск Google Wallpapers: "
+                    "JOYUI заблокировал запуск " + label + ": "
                             + error.getClass().getSimpleName(),
                     Toast.LENGTH_LONG).show();
         }
     }
 
     private void openAppDetails() {
+        openPackageDetails(getPackageName());
+    }
+
+    private void openPackageDetails(String packageName) {
         Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-        intent.setData(android.net.Uri.parse("package:" + getPackageName()));
+        intent.setData(android.net.Uri.parse("package:" + packageName));
         try {
             startActivity(intent);
         } catch (Exception error) {
