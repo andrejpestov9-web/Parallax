@@ -10,7 +10,6 @@ import android.hardware.Sensor;
 import android.hardware.SensorManager;
 import android.net.Uri;
 import android.os.Bundle;
-import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -313,7 +312,7 @@ public final class SettingsActivity extends Activity {
 
     private void openJoyuiWallpaperSettings() {
         try {
-            startActivity(new Intent(Settings.ACTION_WALLPAPER_SETTINGS));
+            startActivity(new Intent("android.settings.WALLPAPER_SETTINGS"));
         } catch (Exception firstFailure) {
             try {
                 startActivity(new Intent(Intent.ACTION_SET_WALLPAPER));
