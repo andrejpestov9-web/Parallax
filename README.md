@@ -2,7 +2,7 @@
 
 Android live wallpaper for four gyroscope-controlled mythic-beast scenes.
 
-Version 0.4 replaces the old Dragon depth warp with a true three-state tilt effect:
+Version 0.4.1 replaces the old Dragon depth warp with a true three-state tilt effect:
 woman on the throne at the left extreme, standing woman in mist at the calibrated
 center, and the full Azure Dragon at the right extreme. The three locked frames are
 crossfaded directly from the rotation-vector sensor without generated intermediate
@@ -17,6 +17,8 @@ edited, recompressed, overwritten, or uploaded.
 - Android 8.0+ (`minSdk 26`), optimized for Android 12 / JOYUI.
 - Four independent image/depth slots with a single decoded scene kept in memory.
 - Built-in three-frame Dragon transformation works immediately after installation.
+- Full-screen in-app sensor preview works without a firmware wallpaper picker.
+- Direct Android live-wallpaper installation is attempted before vendor fallbacks.
 - Auto selection: launcher pages when available, random fallback otherwise.
 - Explicit page and random modes, plus manual random scene switching.
 - Smooth 280 ms crossfade when the active animal changes.
@@ -41,3 +43,7 @@ gradle :app:assembleDebug
 The installable debug build is written to:
 
 `app/build/outputs/apk/debug/app-debug.apk`
+
+The pull-request build repeats host-side blend tests, validates the three
+locked transformation frames, compiles the Android project, verifies the APK
+signature, and publishes the installable APK artifact.
