@@ -106,10 +106,21 @@ public final class SettingsActivity extends Activity {
         directInstall.setOnClickListener(v -> openDirectWallpaperPreview());
         root.addView(directInstall, matchWrapWithMargin(6));
 
+        Button googleWallpapers = button("3. ОТКРЫТЬ GOOGLE WALLPAPERS");
+        googleWallpapers.setOnClickListener(v -> openGoogleWallpapers());
+        root.addView(googleWallpapers, matchWrapWithMargin(6));
+
+        Button diagnostics = button("4. ДИАГНОСТИКА JOYUI");
+        diagnostics.setOnClickListener(v -> startActivity(
+                new Intent(this, WallpaperDiagnosticsActivity.class)
+        ));
+        root.addView(diagnostics, matchWrapWithMargin(6));
+
         TextView installHint = text(
-                "Кнопка 1 всегда показывает эффект внутри приложения и не зависит от JOYUI. " +
-                        "Кнопка 2 напрямую передаёт Android компонент Parallax; Wallcraft " +
-                        "в этом вызове не используется.",
+                "Кнопка 1 всегда показывает эффект внутри приложения. Кнопка 2 сначала " +
+                        "передаёт Android компонент Parallax системе, затем доверенному " +
+                        "Google Wallpapers. Wallcraft намеренно не используется. Кнопка 4 " +
+                        "показывает точный отчёт по компонентам именно этого телефона.",
                 13,
                 Color.rgb(255, 210, 130)
         );
@@ -315,14 +326,57 @@ public final class SettingsActivity extends Activity {
         } catch (Exception ignored) {
             // JOYUI may hide the handler from queries; explicit system fallbacks are tried next.
         }
-        if (!launchSystemHandler(intent, true)) {
+        if (!launchTrustedHandler(intent, true)) {
             Intent chooser = new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER);
-            if (!launchSystemHandler(chooser, false)) {
+            if (!launchTrustedHandler(chooser, false)) {
                 showInstallerFailure(
-                        "JOYUI не предоставляет экран установки. Используйте внутренний просмотр"
+                        "JOYUI и Google Wallpapers не предоставили экран установки"
                 );
             }
         }
+    }
+
+    private void openGoogleWallpapers() {
+        String googlePackage = "com.google.android.apps.wallpaper";
+        PackageManager packageManager = getPackageManager();
+        Intent launch = packageManager.getLaunchIntentForPackage(googlePackage);
+        if (launch != null) {
+            try {
+                startActivity(launch);
+                updateInstallerStatus(
+                        "В Google Wallpapers ищите отдельный раздел «Живые обои»"
+                );
+                return;
+            } catch (Exception ignored) {
+                // Fall through to an explicit launcher lookup.
+            }
+        }
+
+        Intent main = new Intent(Intent.ACTION_MAIN);
+        main.addCategory(Intent.CATEGORY_LAUNCHER);
+        main.setPackage(googlePackage);
+        List<ResolveInfo> handlers = packageManager.queryIntentActivities(
+                main,
+                PackageManager.MATCH_DEFAULT_ONLY
+        );
+        for (ResolveInfo handler : handlers) {
+            if (handler.activityInfo == null) continue;
+            Intent explicit = new Intent(main);
+            explicit.setComponent(new ComponentName(
+                    handler.activityInfo.packageName,
+                    handler.activityInfo.name
+            ));
+            try {
+                startActivity(explicit);
+                updateInstallerStatus(
+                        "В Google Wallpapers ищите отдельный раздел «Живые обои»"
+                );
+                return;
+            } catch (Exception ignored) {
+                // Try the next exported launcher activity.
+            }
+        }
+        showInstallerFailure("Google Wallpapers не найден или не запускается");
     }
 
     private void openJoyuiWallpaperSettings() {
@@ -378,6 +432,39 @@ public final class SettingsActivity extends Activity {
             }
         }
         updateInstallerStatus("Системный обработчик не найден. " + wallpaperInstallerStatusText());
+        return false;
+    }
+
+    /**
+     * In addition to firmware components, permits the official Google Wallpapers package even
+     * when it was installed from Play Store and therefore has no FLAG_SYSTEM. Other third-party
+     * wallpaper applications remain excluded so Wallcraft cannot capture the request.
+     */
+    private boolean launchTrustedHandler(Intent baseIntent, boolean directPreview) {
+        if (launchSystemHandler(baseIntent, directPreview)) return true;
+
+        Intent googleOnly = new Intent(baseIntent);
+        googleOnly.setPackage("com.google.android.apps.wallpaper");
+        List<ResolveInfo> handlers = getPackageManager().queryIntentActivities(
+                googleOnly,
+                PackageManager.MATCH_DEFAULT_ONLY
+        );
+        for (ResolveInfo handler : handlers) {
+            if (handler.activityInfo == null) continue;
+            Intent explicit = new Intent(baseIntent);
+            explicit.setComponent(new ComponentName(
+                    handler.activityInfo.packageName,
+                    handler.activityInfo.name
+            ));
+            try {
+                startActivity(explicit);
+                updateInstallerStatus("Открыт доверенный обработчик Google Wallpapers: "
+                        + handler.activityInfo.name);
+                return true;
+            } catch (Exception ignored) {
+                // Google Wallpapers is present but this activity is blocked by the firmware.
+            }
+        }
         return false;
     }
 
