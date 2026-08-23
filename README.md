@@ -41,3 +41,7 @@ gradle :app:assembleDebug
 The installable debug build is written to:
 
 `app/build/outputs/apk/debug/app-debug.apk`
+
+The pull-request build repeats host-side blend tests, validates the three
+locked transformation frames, compiles the Android project, verifies the APK
+signature, and publishes the installable APK artifact.
