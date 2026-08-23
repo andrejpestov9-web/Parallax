@@ -26,6 +26,17 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Validate project structure
+        run: python3 tools/validate_project.py
+
+      - name: Test four-scene selection policy
+        run: |
+          mkdir -p build/host-tests
+          javac -d build/host-tests \
+            app/src/main/java/com/andrej/parallaxwallpaper/SceneSelectionPolicy.java \
+            tools/SceneSelectionPolicyTest.java
+          java -cp build/host-tests SceneSelectionPolicyTest
+
       - name: Install Android platform
         run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
@@ -47,4 +58,3 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
-

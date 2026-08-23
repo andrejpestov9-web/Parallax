@@ -17,28 +17,52 @@ import android.hardware.SensorManager;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.service.wallpaper.WallpaperService;
 import android.view.SurfaceHolder;
 
 import java.io.InputStream;
+import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/**
- * Gyroscope-controlled live wallpaper engine.
- *
- * The service never rewrites or recompresses the user's selected file. It only
- * decodes the source into memory for rendering. Multilayer assets can be added
- * later without changing the sensor and lifecycle code.
- */
+/** Gyroscope-controlled live wallpaper engine with four switchable scenes. */
 public final class ParallaxWallpaperService extends WallpaperService {
     public static final String PREFS = "parallax_settings";
-    public static final String KEY_IMAGE_URI = "image_uri";
     public static final String KEY_SENSITIVITY = "sensitivity";
     public static final String KEY_STRENGTH = "strength";
     public static final String KEY_INVERT_X = "invert_x";
     public static final String KEY_INVERT_Y = "invert_y";
     public static final String KEY_CALIBRATION_NONCE = "calibration_nonce";
+    public static final String KEY_RANDOM_NONCE = "random_nonce";
+    public static final String KEY_SELECTION_MODE = "selection_mode";
+
+    private static final String KEY_IMAGE_URI_LEGACY = "image_uri";
+    private static final String KEY_IMAGE_URI_PREFIX = "image_uri_";
+    private static final String[] SCENE_NAMES = {
+            "Дракон", "Тигр", "Черепаха и Змея", "Птица"
+    };
+
+    public static String imageKey(int index) {
+        return KEY_IMAGE_URI_PREFIX + clampSceneIndex(index);
+    }
+
+    public static String sceneName(int index) {
+        return SCENE_NAMES[clampSceneIndex(index)];
+    }
+
+    /** Keeps an image selected in version 0.1 as the dragon scene after upgrade. */
+    public static void migrateLegacyImagePreference(SharedPreferences preferences) {
+        if (preferences.contains(imageKey(0)) || !preferences.contains(KEY_IMAGE_URI_LEGACY)) return;
+        String legacy = preferences.getString(KEY_IMAGE_URI_LEGACY, "");
+        if (legacy != null && !legacy.isEmpty()) {
+            preferences.edit().putString(imageKey(0), legacy).apply();
+        }
+    }
+
+    private static int clampSceneIndex(int index) {
+        return Math.max(0, Math.min(SceneSelectionPolicy.SCENE_COUNT - 1, index));
+    }
 
     @Override
     public Engine onCreateEngine() {
@@ -48,6 +72,7 @@ public final class ParallaxWallpaperService extends WallpaperService {
     private final class ParallaxEngine extends Engine
             implements SensorEventListener, SharedPreferences.OnSharedPreferenceChangeListener {
         private static final long FRAME_DELAY_MS = 16L;
+        private static final long CROSSFADE_MS = 280L;
         private static final float MAX_ANGLE_RAD = (float) Math.toRadians(8.0);
         private static final float DEAD_ZONE_RAD = (float) Math.toRadians(0.25);
         private static final float FILTER_ALPHA = 0.12f;
@@ -60,21 +85,31 @@ public final class ParallaxWallpaperService extends WallpaperService {
         private final float[] rotationMatrix = new float[9];
         private final float[] remappedMatrix = new float[9];
         private final float[] orientation = new float[3];
+        private final Random random = new Random();
 
         private final SharedPreferences preferences;
         private final SensorManager sensorManager;
         private final Sensor rotationSensor;
 
         private Bitmap sourceBitmap;
+        private Bitmap transitionBitmap;
+        private long transitionStartedAt;
         private boolean visible;
         private boolean destroyed;
+        private boolean surfaceReady;
         private boolean calibrated;
+        private boolean pageOffsetsAvailable;
+        private float previousLauncherOffset = Float.NaN;
+        private float launcherOffset;
         private float basePitch;
         private float baseRoll;
         private float filteredPitch;
         private float filteredRoll;
-        private float launcherOffset;
+        private int currentPageIndex;
+        private int activeSceneIndex = -1;
+        private int loadGeneration;
         private long calibrationNonce;
+        private long randomNonce;
 
         private final Runnable frameRunnable = new Runnable() {
             @Override
@@ -89,12 +124,14 @@ public final class ParallaxWallpaperService extends WallpaperService {
         ParallaxEngine() {
             Context context = ParallaxWallpaperService.this;
             preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            migrateLegacyImagePreference(preferences);
             sensorManager = (SensorManager) context.getSystemService(Context.SENSOR_SERVICE);
             Sensor gameRotation = sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR);
             rotationSensor = gameRotation != null
                     ? gameRotation
                     : sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
             calibrationNonce = preferences.getLong(KEY_CALIBRATION_NONCE, 0L);
+            randomNonce = preferences.getLong(KEY_RANDOM_NONCE, 0L);
         }
 
         @Override
@@ -102,18 +139,19 @@ public final class ParallaxWallpaperService extends WallpaperService {
             super.onCreate(surfaceHolder);
             setOffsetNotificationsEnabled(true);
             preferences.registerOnSharedPreferenceChangeListener(this);
-            reloadSourceBitmap();
+            selectSceneForCurrentState(true);
         }
 
         @Override
         public void onDestroy() {
             destroyed = true;
             visible = false;
+            loadGeneration++;
             mainHandler.removeCallbacks(frameRunnable);
             sensorManager.unregisterListener(this);
             preferences.unregisterOnSharedPreferenceChangeListener(this);
             imageLoader.shutdownNow();
-            recycleBitmap();
+            recycleAllBitmaps();
             super.onDestroy();
         }
 
@@ -123,8 +161,13 @@ public final class ParallaxWallpaperService extends WallpaperService {
             mainHandler.removeCallbacks(frameRunnable);
             if (visible) {
                 calibrated = false;
+                selectSceneForCurrentState(true);
                 if (rotationSensor != null) {
-                    sensorManager.registerListener(this, rotationSensor, SensorManager.SENSOR_DELAY_GAME);
+                    sensorManager.registerListener(
+                            this,
+                            rotationSensor,
+                            SensorManager.SENSOR_DELAY_GAME
+                    );
                 }
                 mainHandler.post(frameRunnable);
             } else {
@@ -133,8 +176,16 @@ public final class ParallaxWallpaperService extends WallpaperService {
         }
 
         @Override
+        public void onSurfaceCreated(SurfaceHolder holder) {
+            super.onSurfaceCreated(holder);
+            surfaceReady = true;
+            drawFrame();
+        }
+
+        @Override
         public void onSurfaceChanged(SurfaceHolder holder, int format, int width, int height) {
             super.onSurfaceChanged(holder, format, width, height);
+            surfaceReady = true;
             drawFrame();
         }
 
@@ -144,9 +195,29 @@ public final class ParallaxWallpaperService extends WallpaperService {
         }
 
         @Override
+        public void onSurfaceDestroyed(SurfaceHolder holder) {
+            surfaceReady = false;
+            super.onSurfaceDestroyed(holder);
+        }
+
+        @Override
         public void onOffsetsChanged(float xOffset, float yOffset, float xOffsetStep,
                                      float yOffsetStep, int xPixelOffset, int yPixelOffset) {
+            boolean detected = SceneSelectionPolicy.indicatesMultiplePages(
+                    previousLauncherOffset,
+                    xOffset,
+                    xOffsetStep
+            );
+            previousLauncherOffset = xOffset;
             launcherOffset = xOffset - 0.5f;
+            currentPageIndex = SceneSelectionPolicy.pageFromOffsets(xOffset, xOffsetStep);
+
+            if (detected) pageOffsetsAvailable = true;
+            String mode = currentMode();
+            if (SceneSelectionPolicy.MODE_PAGES.equals(mode)
+                    || (SceneSelectionPolicy.MODE_AUTO.equals(mode) && pageOffsetsAvailable)) {
+                switchScene(currentPageIndex, false);
+            }
         }
 
         @Override
@@ -182,13 +253,25 @@ public final class ParallaxWallpaperService extends WallpaperService {
 
         @Override
         public void onAccuracyChanged(Sensor sensor, int accuracy) {
-            // No action needed. Rotation-vector fusion supplies stable values.
+            // Rotation-vector fusion supplies stable values without extra handling.
         }
 
         @Override
         public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
-            if (KEY_IMAGE_URI.equals(key)) {
-                reloadSourceBitmap();
+            if (key != null && key.startsWith(KEY_IMAGE_URI_PREFIX)) {
+                if (key.equals(imageKey(activeSceneIndex))) {
+                    loadActiveScene();
+                } else if (!isSceneConfigured(activeSceneIndex)) {
+                    selectSceneForCurrentState(true);
+                }
+            } else if (KEY_SELECTION_MODE.equals(key)) {
+                selectSceneForCurrentState(true);
+            } else if (KEY_RANDOM_NONCE.equals(key)) {
+                long nonce = sharedPreferences.getLong(KEY_RANDOM_NONCE, 0L);
+                if (nonce != randomNonce) {
+                    randomNonce = nonce;
+                    switchScene(chooseRandomScene(), false);
+                }
             } else if (KEY_CALIBRATION_NONCE.equals(key)) {
                 long nonce = sharedPreferences.getLong(KEY_CALIBRATION_NONCE, 0L);
                 if (nonce != calibrationNonce) {
@@ -198,13 +281,62 @@ public final class ParallaxWallpaperService extends WallpaperService {
             }
         }
 
-        private void reloadSourceBitmap() {
-            String value = preferences.getString(KEY_IMAGE_URI, "");
-            if (value == null || value.isEmpty()) {
-                recycleBitmap();
-                drawFrame();
+        private String currentMode() {
+            return SceneSelectionPolicy.normalizeMode(preferences.getString(
+                    KEY_SELECTION_MODE,
+                    SceneSelectionPolicy.MODE_AUTO
+            ));
+        }
+
+        private void selectSceneForCurrentState(boolean randomizeFallback) {
+            String mode = currentMode();
+            if (SceneSelectionPolicy.MODE_PAGES.equals(mode)) {
+                switchScene(currentPageIndex, false);
                 return;
             }
+            if (SceneSelectionPolicy.MODE_AUTO.equals(mode) && pageOffsetsAvailable) {
+                switchScene(currentPageIndex, false);
+                return;
+            }
+            if (randomizeFallback || activeSceneIndex < 0 || !isSceneConfigured(activeSceneIndex)) {
+                switchScene(chooseRandomScene(), false);
+            }
+        }
+
+        private int chooseRandomScene() {
+            boolean[] configured = new boolean[SceneSelectionPolicy.SCENE_COUNT];
+            for (int index = 0; index < configured.length; index++) {
+                configured[index] = isSceneConfigured(index);
+            }
+            return SceneSelectionPolicy.chooseRandomConfigured(
+                    configured,
+                    activeSceneIndex,
+                    random
+            );
+        }
+
+        private boolean isSceneConfigured(int index) {
+            if (index < 0 || index >= SceneSelectionPolicy.SCENE_COUNT) return false;
+            String value = preferences.getString(imageKey(index), "");
+            return value != null && !value.isEmpty();
+        }
+
+        private void switchScene(int index, boolean forceReload) {
+            int clamped = clampSceneIndex(index);
+            if (!forceReload && clamped == activeSceneIndex) return;
+            activeSceneIndex = clamped;
+            loadActiveScene();
+        }
+
+        private void loadActiveScene() {
+            final int requestedScene = activeSceneIndex;
+            final int generation = ++loadGeneration;
+            String value = preferences.getString(imageKey(requestedScene), "");
+            if (value == null || value.isEmpty()) {
+                replaceBitmap(null);
+                return;
+            }
+
             final Uri uri = Uri.parse(value);
             imageLoader.submit(() -> {
                 Bitmap decoded = null;
@@ -217,26 +349,43 @@ public final class ParallaxWallpaperService extends WallpaperService {
                 }
                 final Bitmap loaded = decoded;
                 mainHandler.post(() -> {
-                    if (destroyed) {
-                        if (loaded != null && !loaded.isRecycled()) loaded.recycle();
+                    if (destroyed || generation != loadGeneration
+                            || requestedScene != activeSceneIndex) {
+                        recycle(loaded);
                         return;
                     }
-                    recycleBitmap();
-                    sourceBitmap = loaded;
-                    drawFrame();
+                    replaceBitmap(loaded);
                 });
             });
         }
 
-        private void recycleBitmap() {
-            Bitmap old = sourceBitmap;
-            sourceBitmap = null;
-            if (old != null && !old.isRecycled()) {
-                old.recycle();
+        private void replaceBitmap(Bitmap loaded) {
+            recycle(transitionBitmap);
+            transitionBitmap = null;
+            if (loaded == null) {
+                recycle(sourceBitmap);
+                sourceBitmap = null;
+            } else {
+                transitionBitmap = sourceBitmap;
+                sourceBitmap = loaded;
+                transitionStartedAt = SystemClock.uptimeMillis();
             }
+            drawFrame();
+        }
+
+        private void recycleAllBitmaps() {
+            recycle(sourceBitmap);
+            recycle(transitionBitmap);
+            sourceBitmap = null;
+            transitionBitmap = null;
+        }
+
+        private void recycle(Bitmap bitmap) {
+            if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
         }
 
         private void drawFrame() {
+            if (!surfaceReady || destroyed) return;
             SurfaceHolder holder = getSurfaceHolder();
             Canvas canvas = null;
             try {
@@ -257,6 +406,23 @@ public final class ParallaxWallpaperService extends WallpaperService {
         }
 
         private void drawSourceImage(Canvas canvas) {
+            canvas.drawColor(Color.BLACK);
+            long elapsed = SystemClock.uptimeMillis() - transitionStartedAt;
+            float progress = Math.max(0f, Math.min(1f, (float) elapsed / CROSSFADE_MS));
+
+            if (transitionBitmap != null && !transitionBitmap.isRecycled() && progress < 1f) {
+                drawBitmapWithMotion(canvas, transitionBitmap, 255);
+                drawBitmapWithMotion(canvas, sourceBitmap, Math.round(progress * 255f));
+            } else {
+                if (transitionBitmap != null) {
+                    recycle(transitionBitmap);
+                    transitionBitmap = null;
+                }
+                drawBitmapWithMotion(canvas, sourceBitmap, 255);
+            }
+        }
+
+        private void drawBitmapWithMotion(Canvas canvas, Bitmap bitmap, int alpha) {
             int width = canvas.getWidth();
             int height = canvas.getHeight();
             float sensitivity = preferences.getFloat(KEY_SENSITIVITY, 1.0f);
@@ -266,18 +432,17 @@ public final class ParallaxWallpaperService extends WallpaperService {
 
             float normalizedX = clamp(filteredRoll * sensitivity / MAX_ANGLE_RAD, -1f, 1f);
             float normalizedY = clamp(filteredPitch * sensitivity / MAX_ANGLE_RAD, -1f, 1f);
-            float moveX = -xSign * normalizedX * width * strength - launcherOffset * width * 0.012f;
+            float moveX = -xSign * normalizedX * width * strength
+                    - launcherOffset * width * 0.012f;
             float moveY = ySign * normalizedY * height * strength * 0.55f;
 
             float coverScale = Math.max(
-                    (float) width / sourceBitmap.getWidth(),
-                    (float) height / sourceBitmap.getHeight()
+                    (float) width / bitmap.getWidth(),
+                    (float) height / bitmap.getHeight()
             );
-            // The fixed reserve also covers launcher page scrolling at the
-            // lowest user-selectable parallax strength.
             float overscanScale = coverScale * (1.014f + strength * 2.4f);
-            float scaledWidth = sourceBitmap.getWidth() * overscanScale;
-            float scaledHeight = sourceBitmap.getHeight() * overscanScale;
+            float scaledWidth = bitmap.getWidth() * overscanScale;
+            float scaledHeight = bitmap.getHeight() * overscanScale;
 
             imageMatrix.reset();
             imageMatrix.postScale(overscanScale, overscanScale);
@@ -285,8 +450,9 @@ public final class ParallaxWallpaperService extends WallpaperService {
                     (width - scaledWidth) * 0.5f + moveX,
                     (height - scaledHeight) * 0.5f + moveY
             );
-            canvas.drawColor(Color.BLACK);
-            canvas.drawBitmap(sourceBitmap, imageMatrix, imagePaint);
+            imagePaint.setAlpha(alpha);
+            canvas.drawBitmap(bitmap, imageMatrix, imagePaint);
+            imagePaint.setAlpha(255);
         }
 
         private void drawPlaceholder(Canvas canvas) {
@@ -304,10 +470,12 @@ public final class ParallaxWallpaperService extends WallpaperService {
             textPaint.setColor(Color.WHITE);
             textPaint.setTextAlign(Paint.Align.CENTER);
             textPaint.setTextSize(Math.max(34f, width * 0.048f));
-            canvas.drawText("Dragon Parallax", width * 0.5f, height * 0.47f, textPaint);
+            canvas.drawText("Parallax — " + sceneName(activeSceneIndex),
+                    width * 0.5f, height * 0.47f, textPaint);
             textPaint.setColor(Color.rgb(181, 222, 219));
             textPaint.setTextSize(Math.max(22f, width * 0.030f));
-            canvas.drawText("Выберите изображение в настройках", width * 0.5f, height * 0.52f, textPaint);
+            canvas.drawText("Выберите изображение в настройках",
+                    width * 0.5f, height * 0.52f, textPaint);
         }
 
         private float wrapRadians(float value) {
