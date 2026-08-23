@@ -120,7 +120,7 @@ public final class WallpaperDiagnosticsActivity extends Activity {
                 new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER));
         appendIntentHandlers(builder, packageManager,
                 "WALLPAPER_SETTINGS",
-                new Intent(Settings.ACTION_WALLPAPER_SETTINGS));
+                new Intent("android.settings.WALLPAPER_SETTINGS"));
         appendIntentHandlers(builder, packageManager,
                 "SET_WALLPAPER",
                 new Intent(Intent.ACTION_SET_WALLPAPER));
