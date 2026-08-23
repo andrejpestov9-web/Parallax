@@ -106,11 +106,19 @@ public final class SettingsActivity extends Activity {
         directInstall.setOnClickListener(v -> openDirectWallpaperPreview());
         root.addView(directInstall, matchWrapWithMargin(6));
 
-        Button googleWallpapers = button("3. ОТКРЫТЬ GOOGLE WALLPAPERS");
+        Button miWallpaperPreview = button("3. УСТАНОВИТЬ ЧЕРЕЗ MI WALLPAPER");
+        miWallpaperPreview.setOnClickListener(v -> openMiWallpaperPreview());
+        root.addView(miWallpaperPreview, matchWrapWithMargin(6));
+
+        Button joyuiSettings = button("4. ОТКРЫТЬ ОБОИ JOYUI");
+        joyuiSettings.setOnClickListener(v -> openJoyuiWallpaperSettings());
+        root.addView(joyuiSettings, matchWrapWithMargin(6));
+
+        Button googleWallpapers = button("5. ОТКРЫТЬ GOOGLE WALLPAPERS");
         googleWallpapers.setOnClickListener(v -> openGoogleWallpapers());
         root.addView(googleWallpapers, matchWrapWithMargin(6));
 
-        Button diagnostics = button("4. ДИАГНОСТИКА JOYUI");
+        Button diagnostics = button("6. ДИАГНОСТИКА JOYUI");
         diagnostics.setOnClickListener(v -> startActivity(
                 new Intent(this, WallpaperDiagnosticsActivity.class)
         ));
@@ -119,8 +127,9 @@ public final class SettingsActivity extends Activity {
         TextView installHint = text(
                 "Кнопка 1 всегда показывает эффект внутри приложения. Кнопка 2 сначала " +
                         "передаёт Android компонент Parallax системе, затем доверенному " +
-                        "Google Wallpapers. Wallcraft намеренно не используется. Кнопка 4 " +
-                        "показывает точный отчёт по компонентам именно этого телефона.",
+                "Google Wallpapers. Кнопка 3 обращается прямо к найденному на этом " +
+                        "Black Shark экрану Mi Wallpaper Preview. Кнопка 4 открывает " +
+                        "встроенные настройки обоев JOYUI. Wallcraft намеренно не используется.",
                 13,
                 Color.rgb(255, 210, 130)
         );
@@ -379,7 +388,43 @@ public final class SettingsActivity extends Activity {
         showInstallerFailure("Google Wallpapers не найден или не запускается");
     }
 
+    private void openMiWallpaperPreview() {
+        ComponentName wallpaper = new ComponentName(this, ParallaxWallpaperService.class);
+        Intent preview = new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER);
+        preview.setComponent(new ComponentName(
+                "com.miui.miwallpaper",
+                "com.miui.miwallpaper.MiWallpaperPreview"
+        ));
+        preview.putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, wallpaper);
+        preview.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(preview);
+            updateInstallerStatus(
+                    "Компонент Parallax передан в MiWallpaperPreview"
+            );
+        } catch (Exception error) {
+            showInstallerFailure(
+                    "MiWallpaperPreview найден, но JOYUI отклонил запуск: "
+                            + error.getClass().getSimpleName()
+            );
+        }
+    }
+
     private void openJoyuiWallpaperSettings() {
+        Intent explicit = new Intent(Intent.ACTION_MAIN);
+        explicit.setComponent(new ComponentName(
+                "com.android.thememanager",
+                "com.android.thememanager.settings.WallpaperSettingsActivity"
+        ));
+        try {
+            startActivity(explicit);
+            updateInstallerStatus(
+                    "Открыт встроенный WallpaperSettingsActivity приложения Темы"
+            );
+            return;
+        } catch (Exception ignored) {
+            // Fall through to public Android actions on firmware variants.
+        }
         Intent settings = new Intent("android.settings.WALLPAPER_SETTINGS");
         if (launchSystemHandler(settings, false)) return;
         Intent fallback = new Intent(Intent.ACTION_SET_WALLPAPER);
