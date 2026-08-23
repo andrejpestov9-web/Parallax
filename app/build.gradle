@@ -10,8 +10,8 @@ android {
         applicationId "com.andrej.parallaxwallpaper"
         minSdk 26
         targetSdk 35
-        versionCode 11
-        versionName "0.5.3"
+        versionCode 12
+        versionName "0.6.0"
     }
 
     buildTypes {
@@ -25,4 +25,56 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    androidResources {
+        // Kustom's provider needs a real file descriptor for the embedded archive.
+        noCompress += "zip"
+    }
+}
+
+def hologramDir = file("src/main/assets/dragon_hologram")
+def presetSourceDir = file("src/main/kustom/Dragon_Hologram_Gyro")
+def generatedPresetDir = file("src/main/assets/wallpapers")
+
+tasks.register("generateKustomPreset", Zip) {
+    group = "build"
+    description = "Packages the three locked hologram frames as an installable KLWP preset"
+
+    from(presetSourceDir) {
+        include "preset.json"
+    }
+    from(hologramDir) {
+        include "left.webp"
+        into "bitmaps"
+        rename { "IMG33afd3af8b43bb7d660996c1f85854dd" }
+    }
+    from(hologramDir) {
+        include "center.webp"
+        into "bitmaps"
+        rename { "IMG090e94d8b76898fcfa49d9f42a279d84" }
+    }
+    from(hologramDir) {
+        include "right.webp"
+        into "bitmaps"
+        rename { "IMG81977377c4c3737e485a8e199808730a6" }
+    }
+    // Android decoders inspect the bytes, not the suffix. Reusing the locked
+    // center frame avoids generating or recompressing any user artwork.
+    from(hologramDir) {
+        include "center.webp"
+        rename { "preset_thumb_portrait.jpg" }
+    }
+    from(hologramDir) {
+        include "center.webp"
+        rename { "preset_thumb_landscape.jpg" }
+    }
+
+    destinationDirectory = generatedPresetDir
+    archiveFileName = "Dragon_Hologram_Gyro.klwp.zip"
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+tasks.named("preBuild").configure {
+    dependsOn tasks.named("generateKustomPreset")
 }

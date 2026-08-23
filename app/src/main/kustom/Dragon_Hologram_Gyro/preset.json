@@ -1,0 +1,77 @@
+{
+  "preset_info": {
+    "version": 10,
+    "title": "Dragon Hologram Gyro",
+    "description": "Three locked source frames: throne, standing woman, dragoness. Horizontal gyroscope crossfade.",
+    "author": "Andrej",
+    "email": "",
+    "width": 925,
+    "height": 1700,
+    "xscreens": 1,
+    "features": "",
+    "release": 382621115,
+    "locked": false,
+    "pflags": 0
+  },
+  "preset_root": {
+    "internal_type": "RootLayerModule",
+    "internal_title": "Dragon Hologram",
+    "internal_toggles": {},
+    "internal_formulas": {},
+    "background_type": "IMAGE",
+    "background_color": "#FF06151D",
+    "background_bitmap": "kfile://org.kustom.provider/bitmaps/IMG090e94d8b76898fcfa49d9f42a279d84",
+    "background_blur": 0.0,
+    "globals_list": {},
+    "internal_globals": {},
+    "config_scale_value": 100.0,
+    "viewgroup_items": [
+      {
+        "internal_type": "BitmapModule",
+        "internal_title": "Tilt left: Throne",
+        "position_anchor": "CENTER",
+        "position_offset_x": 0.0,
+        "position_offset_y": 0.0,
+        "bitmap_bitmap": "kfile://org.kustom.provider/bitmaps/IMG33afd3af8b43bb7d660996c1f85854dd",
+        "bitmap_width": 925.0,
+        "bitmap_alpha": 100,
+        "internal_animations": [
+          {
+            "type": "GYRO",
+            "action": "ADVANCED",
+            "speed": 10.0,
+            "angle": 180.0,
+            "limit": 12.0,
+            "animator": [
+              {"position": 0, "value": 0.0, "property": "OPACITY", "ease": "STRAIGHT"},
+              {"position": 100, "value": 100.0, "property": "OPACITY", "ease": "STRAIGHT"}
+            ]
+          }
+        ]
+      },
+      {
+        "internal_type": "BitmapModule",
+        "internal_title": "Tilt right: Dragoness",
+        "position_anchor": "CENTER",
+        "position_offset_x": 0.0,
+        "position_offset_y": 0.0,
+        "bitmap_bitmap": "kfile://org.kustom.provider/bitmaps/IMG81977377c4c3737e485a8e199808730a6",
+        "bitmap_width": 925.0,
+        "bitmap_alpha": 100,
+        "internal_animations": [
+          {
+            "type": "GYRO",
+            "action": "ADVANCED",
+            "speed": 10.0,
+            "angle": 0.0,
+            "limit": 12.0,
+            "animator": [
+              {"position": 0, "value": 0.0, "property": "OPACITY", "ease": "STRAIGHT"},
+              {"position": 100, "value": 100.0, "property": "OPACITY", "ease": "STRAIGHT"}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

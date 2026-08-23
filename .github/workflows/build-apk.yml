@@ -50,6 +50,16 @@ jobs:
       - name: Install Android platform
         run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Add the official Kustom preset provider
+        run: |
+          git clone --depth 1 https://github.com/jahirfiquitiva/KustomAPI.git /tmp/kustom-api
+          mkdir -p app/src/main/java/org/kustom/api
+          cp /tmp/kustom-api/api/src/main/java/org/kustom/api/Provider.java app/src/main/java/org/kustom/api/
+          cp /tmp/kustom-api/api/src/main/java/org/kustom/api/CacheHelper.java app/src/main/java/org/kustom/api/
+          cp /tmp/kustom-api/api/src/main/java/org/kustom/api/FileInfo.java app/src/main/java/org/kustom/api/
+          sed -i '/androidx.annotation/d; s/@NonNull //g; s/@Nullable //g' \
+            app/src/main/java/org/kustom/api/Provider.java
+
       - name: Set up Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -66,6 +76,13 @@ jobs:
           unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'assets/dragon_hologram/left.webp'
           unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'assets/dragon_hologram/center.webp'
           unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'assets/dragon_hologram/right.webp'
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'assets/wallpapers/Dragon_Hologram_Gyro.klwp.zip'
+          unzip -p app/build/outputs/apk/debug/app-debug.apk \
+            assets/wallpapers/Dragon_Hologram_Gyro.klwp.zip > /tmp/Dragon_Hologram_Gyro.klwp.zip
+          unzip -t /tmp/Dragon_Hologram_Gyro.klwp.zip
+          unzip -p /tmp/Dragon_Hologram_Gyro.klwp.zip bitmaps/IMG090e94d8b76898fcfa49d9f42a279d84 | sha256sum | grep 090e94d8b76898fcfa49d9f42a279d84cb55285c74621fae437da13739fcb931
+          unzip -p /tmp/Dragon_Hologram_Gyro.klwp.zip bitmaps/IMG33afd3af8b43bb7d660996c1f85854dd | sha256sum | grep 33afd3af8b43bb7d660996c1f85854dd225c5ee975cf55e26285225302c65b78
+          unzip -p /tmp/Dragon_Hologram_Gyro.klwp.zip bitmaps/IMG81977377c4c3737e485a8e199808730a6 | sha256sum | grep 81977377c4c3737e485a8e199808730a679336dc0a9a94e56369abf522573dbe
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs \
             app/build/outputs/apk/debug/app-debug.apk
 

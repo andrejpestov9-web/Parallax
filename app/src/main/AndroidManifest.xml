@@ -30,6 +30,7 @@
         <package android:name="com.miui.miwallpaper" />
         <package android:name="com.miui.android.fashiongallery" />
         <package android:name="com.google.android.apps.wallpaper" />
+        <package android:name="org.kustom.wallpaper" />
     </queries>
 
     <application
@@ -42,7 +43,7 @@
         android:theme="@style/AppTheme">
 
         <activity
-            android:name=".SettingsActivity"
+            android:name=".KustomPackActivity"
             android:exported="true"
             android:label="@string/app_name">
             <intent-filter>
@@ -50,6 +51,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="@string/app_name" />
 
         <activity
             android:name=".HologramPreviewActivity"
@@ -75,6 +81,16 @@
                 android:name="android.service.wallpaper"
                 android:resource="@xml/wallpaper" />
         </service>
+
+        <provider
+            android:name="org.kustom.api.Provider"
+            android:authorities="${applicationId}.kustom.provider"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.kustom.provider.WALLPAPERS" />
+            </intent-filter>
+        </provider>
     </application>
 
 </manifest>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Parallax</string>
+    <string name="app_name">Dragon Hologram</string>
     <string name="wallpaper_name">Parallax 2.5D — четыре зверя</string>
     <string name="wallpaper_description">Четыре сцены живых обоев с глубиной и параллаксом от наклона телефона.</string>
 </resources>
