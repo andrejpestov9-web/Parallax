@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Dragon Parallax</string>
+    <string name="wallpaper_name">Dragon Parallax Wallpaper</string>
+    <string name="wallpaper_description">Живые обои с параллаксом от наклона телефона.</string>
+</resources>
+
