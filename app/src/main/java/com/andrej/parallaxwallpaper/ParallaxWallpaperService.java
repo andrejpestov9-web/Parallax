@@ -42,6 +42,11 @@ public final class ParallaxWallpaperService extends WallpaperService {
     private static final String KEY_DEPTH_URI_PREFIX = "depth_uri_";
     private static final String BUILTIN_DRAGON_SOURCE = "dragon/source.png";
     private static final String BUILTIN_DRAGON_DEPTH = "dragon/depth.png";
+    private static final String[] BUILTIN_DRAGON_HOLOGRAM = {
+            "dragon_hologram/left.webp",
+            "dragon_hologram/center.webp",
+            "dragon_hologram/right.webp"
+    };
     private static final String[] SCENE_NAMES = {
             "Дракон", "Тигр", "Черепаха и Змея", "Птица"
     };
@@ -81,6 +86,7 @@ public final class ParallaxWallpaperService extends WallpaperService {
         private static final long FRAME_DELAY_MS = 16L;
         private static final long CROSSFADE_MS = 280L;
         private static final float MAX_ANGLE_RAD = (float) Math.toRadians(8.0);
+        private static final float HOLOGRAM_FULL_ANGLE_RAD = (float) Math.toRadians(12.0);
         private static final float DEAD_ZONE_RAD = (float) Math.toRadians(0.25);
         private static final float FILTER_ALPHA = 0.12f;
         private static final int MESH_WIDTH = 32;
@@ -96,6 +102,7 @@ public final class ParallaxWallpaperService extends WallpaperService {
         private final float[] rotationMatrix = new float[9];
         private final float[] remappedMatrix = new float[9];
         private final float[] orientation = new float[3];
+        private final float[] hologramWeights = new float[3];
         private final Random random = new Random();
 
         private final SharedPreferences preferences;
@@ -104,8 +111,10 @@ public final class ParallaxWallpaperService extends WallpaperService {
 
         private Bitmap sourceBitmap;
         private Bitmap transitionBitmap;
+        private final Bitmap[] hologramBitmaps = new Bitmap[3];
         private float[] sourceDepthGrid;
         private float[] transitionDepthGrid;
+        private boolean builtinHologramActive;
         private long transitionStartedAt;
         private boolean visible;
         private boolean destroyed;
@@ -348,33 +357,35 @@ public final class ParallaxWallpaperService extends WallpaperService {
         private void loadActiveScene() {
             final int requestedScene = activeSceneIndex;
             final int generation = ++loadGeneration;
+
+            // The Dragon slot is now a fixed three-frame gyroscope transformation.
+            // Legacy single-image preferences are deliberately ignored for this scene.
+            if (requestedScene == 0) {
+                loadBuiltinDragonHologram(generation, requestedScene);
+                return;
+            }
+
             String value = preferences.getString(imageKey(requestedScene), "");
-            final boolean useBuiltinDragon = requestedScene == 0
-                    && (value == null || value.isEmpty());
-            if (!useBuiltinDragon && (value == null || value.isEmpty())) {
+            if (value == null || value.isEmpty()) {
                 replaceBitmap(null, null);
                 return;
             }
 
-            final Uri uri = useBuiltinDragon ? null : Uri.parse(value);
+            final Uri uri = Uri.parse(value);
             String depthValue = preferences.getString(depthKey(requestedScene), "");
-            final Uri depthUri = useBuiltinDragon || depthValue == null || depthValue.isEmpty()
+            final Uri depthUri = depthValue == null || depthValue.isEmpty()
                     ? null
                     : Uri.parse(depthValue);
             imageLoader.submit(() -> {
                 Bitmap decoded = null;
                 float[] loadedDepth = null;
-                try (InputStream depthStream = useBuiltinDragon
-                        ? getAssets().open(BUILTIN_DRAGON_DEPTH)
-                        : depthUri == null ? null
+                try (InputStream depthStream = depthUri == null ? null
                         : getContentResolver().openInputStream(depthUri)) {
                     if (depthStream != null) loadedDepth = decodeDepthGrid(depthStream);
                 } catch (Exception ignored) {
                     // A missing depth map safely falls back to flat image motion.
                 }
-                try (InputStream stream = useBuiltinDragon
-                        ? getAssets().open(BUILTIN_DRAGON_SOURCE)
-                        : getContentResolver().openInputStream(uri)) {
+                try (InputStream stream = getContentResolver().openInputStream(uri)) {
                     BitmapFactory.Options options = new BitmapFactory.Options();
                     options.inPreferredConfig = Bitmap.Config.ARGB_8888;
                     decoded = BitmapFactory.decodeStream(stream, null, options);
@@ -390,6 +401,35 @@ public final class ParallaxWallpaperService extends WallpaperService {
                         return;
                     }
                     replaceBitmap(loaded, finalDepth);
+                });
+            });
+        }
+
+        private void loadBuiltinDragonHologram(int generation, int requestedScene) {
+            imageLoader.submit(() -> {
+                Bitmap[] loaded = new Bitmap[BUILTIN_DRAGON_HOLOGRAM.length];
+                boolean complete = true;
+                for (int index = 0; index < loaded.length; index++) {
+                    try (InputStream stream = getAssets().open(BUILTIN_DRAGON_HOLOGRAM[index])) {
+                        BitmapFactory.Options options = new BitmapFactory.Options();
+                        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+                        loaded[index] = BitmapFactory.decodeStream(stream, null, options);
+                        if (loaded[index] == null) complete = false;
+                    } catch (Exception ignored) {
+                        complete = false;
+                    }
+                }
+                if (!complete) {
+                    for (Bitmap bitmap : loaded) recycle(bitmap);
+                }
+                final boolean loadedComplete = complete;
+                mainHandler.post(() -> {
+                    if (destroyed || generation != loadGeneration
+                            || requestedScene != activeSceneIndex) {
+                        for (Bitmap bitmap : loaded) recycle(bitmap);
+                        return;
+                    }
+                    replaceHologram(loadedComplete ? loaded : null);
                 });
             });
         }
@@ -425,6 +465,8 @@ public final class ParallaxWallpaperService extends WallpaperService {
         }
 
         private void replaceBitmap(Bitmap loaded, float[] loadedDepth) {
+            recycleHologramBitmaps();
+            builtinHologramActive = false;
             recycle(transitionBitmap);
             transitionBitmap = null;
             transitionDepthGrid = null;
@@ -442,13 +484,38 @@ public final class ParallaxWallpaperService extends WallpaperService {
             drawFrame();
         }
 
-        private void recycleAllBitmaps() {
+        private void replaceHologram(Bitmap[] loaded) {
             recycle(sourceBitmap);
             recycle(transitionBitmap);
             sourceBitmap = null;
             transitionBitmap = null;
             sourceDepthGrid = null;
             transitionDepthGrid = null;
+            recycleHologramBitmaps();
+
+            builtinHologramActive = loaded != null && loaded.length == hologramBitmaps.length;
+            if (builtinHologramActive) {
+                System.arraycopy(loaded, 0, hologramBitmaps, 0, hologramBitmaps.length);
+            }
+            drawFrame();
+        }
+
+        private void recycleAllBitmaps() {
+            recycle(sourceBitmap);
+            recycle(transitionBitmap);
+            recycleHologramBitmaps();
+            sourceBitmap = null;
+            transitionBitmap = null;
+            sourceDepthGrid = null;
+            transitionDepthGrid = null;
+            builtinHologramActive = false;
+        }
+
+        private void recycleHologramBitmaps() {
+            for (int index = 0; index < hologramBitmaps.length; index++) {
+                recycle(hologramBitmaps[index]);
+                hologramBitmaps[index] = null;
+            }
         }
 
         private void recycle(Bitmap bitmap) {
@@ -466,7 +533,9 @@ public final class ParallaxWallpaperService extends WallpaperService {
                     canvas = holder.lockCanvas();
                 }
                 if (canvas == null) return;
-                if (sourceBitmap == null || sourceBitmap.isRecycled()) {
+                if (builtinHologramActive && hologramReady()) {
+                    drawHologram(canvas);
+                } else if (sourceBitmap == null || sourceBitmap.isRecycled()) {
                     drawPlaceholder(canvas);
                 } else {
                     drawSourceImage(canvas);
@@ -474,6 +543,72 @@ public final class ParallaxWallpaperService extends WallpaperService {
             } finally {
                 if (canvas != null) holder.unlockCanvasAndPost(canvas);
             }
+        }
+
+        private boolean hologramReady() {
+            for (Bitmap bitmap : hologramBitmaps) {
+                if (bitmap == null || bitmap.isRecycled()) return false;
+            }
+            return true;
+        }
+
+        private void drawHologram(Canvas canvas) {
+            canvas.drawColor(Color.BLACK);
+            float sensitivity = preferences.getFloat(KEY_SENSITIVITY, 1.0f);
+            float direction = preferences.getBoolean(KEY_INVERT_X, false) ? -1f : 1f;
+            float normalizedTilt = clamp(
+                    direction * filteredRoll * sensitivity / HOLOGRAM_FULL_ANGLE_RAD,
+                    -1f,
+                    1f
+            );
+            if (Math.abs(normalizedTilt) < 0.025f) normalizedTilt = 0f;
+
+            HologramBlend.fillWeights(normalizedTilt, hologramWeights);
+            if (normalizedTilt <= 0f) {
+                drawBitmapCover(canvas, hologramBitmaps[HologramBlend.LEFT], 255);
+                int centerAlpha = Math.round(
+                        hologramWeights[HologramBlend.CENTER] * 255f
+                );
+                if (centerAlpha > 0) {
+                    drawBitmapCover(
+                            canvas,
+                            hologramBitmaps[HologramBlend.CENTER],
+                            centerAlpha
+                    );
+                }
+            } else {
+                drawBitmapCover(canvas, hologramBitmaps[HologramBlend.CENTER], 255);
+                int rightAlpha = Math.round(
+                        hologramWeights[HologramBlend.RIGHT] * 255f
+                );
+                if (rightAlpha > 0) {
+                    drawBitmapCover(
+                            canvas,
+                            hologramBitmaps[HologramBlend.RIGHT],
+                            rightAlpha
+                    );
+                }
+            }
+        }
+
+        private void drawBitmapCover(Canvas canvas, Bitmap bitmap, int alpha) {
+            int width = canvas.getWidth();
+            int height = canvas.getHeight();
+            float scale = Math.max(
+                    (float) width / bitmap.getWidth(),
+                    (float) height / bitmap.getHeight()
+            );
+            float scaledWidth = bitmap.getWidth() * scale;
+            float scaledHeight = bitmap.getHeight() * scale;
+            imageMatrix.reset();
+            imageMatrix.postScale(scale, scale);
+            imageMatrix.postTranslate(
+                    (width - scaledWidth) * 0.5f,
+                    (height - scaledHeight) * 0.5f
+            );
+            imagePaint.setAlpha(alpha);
+            canvas.drawBitmap(bitmap, imageMatrix, imagePaint);
+            imagePaint.setAlpha(255);
         }
 
         private void drawSourceImage(Canvas canvas) {

@@ -5,6 +5,9 @@ import android.app.WallpaperManager;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
@@ -22,13 +25,18 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
-/** On-device configuration screen with four independent wallpaper scenes. */
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+
+/** On-device configuration screen for the dragon transformation and future beast scenes. */
 public final class SettingsActivity extends Activity {
     private static final int REQUEST_IMAGE_BASE = 1100;
     private static final int REQUEST_DEPTH_BASE = 1200;
 
     private SharedPreferences preferences;
     private final TextView[] sceneLabels = new TextView[SceneSelectionPolicy.SCENE_COUNT];
+    private TextView wallpaperInstallerStatus;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,13 +57,13 @@ public final class SettingsActivity extends Activity {
         root.setPadding(padding, padding, padding, padding);
         root.setBackgroundColor(Color.rgb(6, 20, 25));
 
-        TextView title = text("Parallax", 28, Color.WHITE);
+        TextView title = text("Parallax — превращение", 28, Color.WHITE);
         title.setGravity(Gravity.CENTER_HORIZONTAL);
         root.addView(title, matchWrap());
 
         TextView privacy = text(
-                "Четыре независимые сцены. Приложение только читает выбранные файлы: " +
-                        "оригиналы не изменяются, не пережимаются и не перезаписываются.",
+                "Дракон уже встроен как три состояния одного изображения. " +
+                        "Приложение не изменяет и не перезаписывает исходники.",
                 15,
                 Color.rgb(183, 223, 220)
         );
@@ -69,13 +77,22 @@ public final class SettingsActivity extends Activity {
         }
         TextView sensorStatus = text(
                 rotationSensor == null
-                        ? "Датчик наклона не найден — останется смена сцен"
+                        ? "Датчик наклона не найден — будет показан центральный кадр"
                         : "Датчик наклона найден: " + rotationSensor.getName(),
                 13,
                 rotationSensor == null ? Color.rgb(255, 180, 120) : Color.rgb(120, 215, 185)
         );
         sensorStatus.setPadding(0, 0, 0, dp(14));
         root.addView(sensorStatus, matchWrap());
+
+        TextView transformationHint = text(
+                "Наклон влево — женщина на троне. Центр — женщина стоит в тумане. " +
+                        "Наклон вправо — драконица. Переход идёт напрямую от гироскопа.",
+                15,
+                Color.rgb(255, 210, 130)
+        );
+        transformationHint.setPadding(0, 0, 0, dp(14));
+        root.addView(transformationHint, matchWrap());
 
         addSectionTitle(root, "Установка живых обоев");
 
@@ -92,19 +109,29 @@ public final class SettingsActivity extends Activity {
         root.addView(joyuiSettings, matchWrapWithMargin(6));
 
         TextView installHint = text(
-                "Сначала нажмите кнопку 1 и выберите Parallax. Если JOYUI не откроет " +
-                        "список, используйте кнопку 2. Кнопка 3 — системный запасной путь.",
+                "Сначала нажмите кнопку 2. Новая версия запускает системный экран явно и " +
+                        "не разрешает Wallcraft перехватить установку. Кнопка 1 открывает " +
+                        "полный системный список.",
                 13,
                 Color.rgb(255, 210, 130)
         );
         installHint.setPadding(0, dp(8), 0, dp(8));
         root.addView(installHint, matchWrap());
 
-        addSectionTitle(root, "Изображения зверей");
+        wallpaperInstallerStatus = text(wallpaperInstallerStatusText(), 12,
+                Color.rgb(140, 195, 190));
+        wallpaperInstallerStatus.setPadding(0, dp(4), 0, dp(8));
+        root.addView(wallpaperInstallerStatus, matchWrap());
+
+        addSectionTitle(root, "Сцены зверей");
         for (int index = 0; index < SceneSelectionPolicy.SCENE_COUNT; index++) {
             final int sceneIndex = index;
             sceneLabels[index] = text(sceneImageText(index), 14, Color.rgb(201, 229, 226));
             root.addView(sceneLabels[index], matchWrapWithMargin(index == 0 ? 4 : 12));
+
+            if (index == 0) {
+                continue;
+            }
 
             Button choose = button("Выбрать: " + ParallaxWallpaperService.sceneName(index));
             choose.setOnClickListener(v -> chooseImage(sceneIndex));
@@ -116,17 +143,6 @@ public final class SettingsActivity extends Activity {
             chooseDepth.setOnClickListener(v -> chooseDepthMap(sceneIndex));
             root.addView(chooseDepth, matchWrapWithMargin(5));
 
-            if (index == 0) {
-                Button restoreDragon = button("Вернуть встроенного 4K-дракона");
-                restoreDragon.setOnClickListener(v -> {
-                    preferences.edit()
-                            .remove(ParallaxWallpaperService.imageKey(0))
-                            .remove(ParallaxWallpaperService.depthKey(0))
-                            .apply();
-                    sceneLabels[0].setText(sceneImageText(0));
-                });
-                root.addView(restoreDragon, matchWrapWithMargin(5));
-            }
         }
 
         addSectionTitle(root, "Как переключать зверей");
@@ -179,7 +195,7 @@ public final class SettingsActivity extends Activity {
         });
         root.addView(randomNow, matchWrapWithMargin(8));
 
-        addSeekBar(root, "Чувствительность наклона", 20, 180,
+        addSeekBar(root, "Чувствительность превращения", 20, 180,
                 Math.round(preferences.getFloat(
                         ParallaxWallpaperService.KEY_SENSITIVITY, 1.0f) * 100f),
                 value -> preferences.edit().putFloat(
@@ -187,7 +203,7 @@ public final class SettingsActivity extends Activity {
                         value / 100f
                 ).apply());
 
-        addSeekBar(root, "Сила смещения", 6, 40,
+        addSeekBar(root, "Сила движения для остальных сцен", 6, 40,
                 Math.round(preferences.getFloat(
                         ParallaxWallpaperService.KEY_STRENGTH, 0.024f) * 1000f),
                 value -> preferences.edit().putFloat(
@@ -195,7 +211,7 @@ public final class SettingsActivity extends Activity {
                         value / 1000f
                 ).apply());
 
-        CheckBox invertX = checkBox("Инвертировать движение по горизонтали",
+        CheckBox invertX = checkBox("Поменять левую и правую стороны",
                 preferences.getBoolean(ParallaxWallpaperService.KEY_INVERT_X, false));
         invertX.setOnCheckedChangeListener((buttonView, checked) -> preferences.edit()
                 .putBoolean(ParallaxWallpaperService.KEY_INVERT_X, checked).apply());
@@ -284,14 +300,9 @@ public final class SettingsActivity extends Activity {
     }
 
     private void openSystemLiveWallpaperList() {
-        try {
-            startActivity(new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER));
-        } catch (Exception exception) {
-            Toast.makeText(
-                    this,
-                    "JOYUI не открыла список. Нажмите кнопку 2.",
-                    Toast.LENGTH_LONG
-            ).show();
+        Intent intent = new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER);
+        if (!launchSystemHandler(intent, false)) {
+            showInstallerFailure("Системный список живых обоев не найден");
         }
     }
 
@@ -299,43 +310,124 @@ public final class SettingsActivity extends Activity {
         ComponentName component = new ComponentName(this, ParallaxWallpaperService.class);
         Intent intent = new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER);
         intent.putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, component);
-        try {
-            startActivity(intent);
-        } catch (Exception exception) {
-            Toast.makeText(
-                    this,
-                    "Прямой просмотр заблокирован JOYUI. Нажмите кнопку 3.",
-                    Toast.LENGTH_LONG
-            ).show();
+        if (!launchSystemHandler(intent, true)) {
+            showInstallerFailure("Системный экран подтверждения Parallax не найден");
         }
     }
 
     private void openJoyuiWallpaperSettings() {
-        try {
-            startActivity(new Intent("android.settings.WALLPAPER_SETTINGS"));
-        } catch (Exception firstFailure) {
-            try {
-                startActivity(new Intent(Intent.ACTION_SET_WALLPAPER));
-            } catch (Exception secondFailure) {
-                Toast.makeText(
-                        this,
-                        "JOYUI не предоставляет системный экран установки живых обоев.",
-                        Toast.LENGTH_LONG
-                ).show();
-            }
+        Intent settings = new Intent("android.settings.WALLPAPER_SETTINGS");
+        if (launchSystemHandler(settings, false)) return;
+        Intent fallback = new Intent(Intent.ACTION_SET_WALLPAPER);
+        if (!launchSystemHandler(fallback, false)) {
+            showInstallerFailure("Системные настройки обоев JOYUI не найдены");
         }
     }
 
+    /**
+     * Launches only an OS/firmware activity. This prevents third-party wallpaper apps such as
+     * Wallcraft from becoming the default handler for our installation buttons.
+     */
+    private boolean launchSystemHandler(Intent baseIntent, boolean directPreview) {
+        List<ResolveInfo> handlers = querySystemHandlers(baseIntent);
+        for (ResolveInfo handler : handlers) {
+            Intent explicit = new Intent(baseIntent);
+            explicit.setComponent(new ComponentName(
+                    handler.activityInfo.packageName,
+                    handler.activityInfo.name
+            ));
+            try {
+                startActivity(explicit);
+                updateInstallerStatus("Открыт системный компонент: "
+                        + handler.activityInfo.packageName + "/" + handler.activityInfo.name);
+                return true;
+            } catch (Exception ignored) {
+                // Try the next system implementation exposed by the firmware.
+            }
+        }
+
+        // Some JOYUI builds hide the picker from intent queries but keep the AOSP component.
+        String[][] knownComponents = directPreview
+                ? new String[][] {
+                    {"com.android.wallpaper.livepicker",
+                            "com.android.wallpaper.livepicker.LiveWallpaperChange"}
+                }
+                : new String[][] {
+                    {"com.android.wallpaper.livepicker",
+                            "com.android.wallpaper.livepicker.LiveWallpaperActivity"}
+                };
+        for (String[] candidate : knownComponents) {
+            Intent explicit = new Intent(baseIntent);
+            explicit.setComponent(new ComponentName(candidate[0], candidate[1]));
+            try {
+                startActivity(explicit);
+                updateInstallerStatus("Открыт встроенный Android-компонент: " + candidate[0]);
+                return true;
+            } catch (Exception ignored) {
+                // The firmware genuinely does not expose this component.
+            }
+        }
+        updateInstallerStatus("Системный обработчик не найден. " + wallpaperInstallerStatusText());
+        return false;
+    }
+
+    private List<ResolveInfo> querySystemHandlers(Intent intent) {
+        PackageManager packageManager = getPackageManager();
+        List<ResolveInfo> all = packageManager.queryIntentActivities(
+                intent,
+                PackageManager.MATCH_DEFAULT_ONLY
+        );
+        List<ResolveInfo> system = new ArrayList<>();
+        for (ResolveInfo info : all) {
+            if (info.activityInfo == null || info.activityInfo.applicationInfo == null) continue;
+            ApplicationInfo app = info.activityInfo.applicationInfo;
+            int systemFlags = ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP;
+            if ((app.flags & systemFlags) != 0) system.add(info);
+        }
+        system.sort(Comparator.comparingInt(this::systemHandlerPriority));
+        return system;
+    }
+
+    private int systemHandlerPriority(ResolveInfo info) {
+        String packageName = info.activityInfo.packageName;
+        if ("com.android.wallpaper.livepicker".equals(packageName)) return 0;
+        if ("com.android.thememanager".equals(packageName)) return 1;
+        if ("com.google.android.apps.wallpaper".equals(packageName)) return 2;
+        return 10;
+    }
+
+    private String wallpaperInstallerStatusText() {
+        List<ResolveInfo> direct = querySystemHandlers(
+                new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
+        );
+        List<ResolveInfo> chooser = querySystemHandlers(
+                new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER)
+        );
+        return "Диагностика: системных экранов подтверждения — " + direct.size()
+                + ", списков живых обоев — " + chooser.size() + ".";
+    }
+
+    private void updateInstallerStatus(String value) {
+        if (wallpaperInstallerStatus != null) wallpaperInstallerStatus.setText(value);
+    }
+
+    private void showInstallerFailure(String message) {
+        String details = wallpaperInstallerStatusText();
+        updateInstallerStatus(message + ". " + details);
+        Toast.makeText(this, message + ". Смотрите строку диагностики под кнопками.",
+                Toast.LENGTH_LONG).show();
+    }
+
     private String sceneImageText(int index) {
+        if (index == 0) {
+            return "Дракон: встроены 3 кадра · трон → туман → драконица";
+        }
         String uri = preferences.getString(ParallaxWallpaperService.imageKey(index), "");
         String depthUri = preferences.getString(ParallaxWallpaperService.depthKey(index), "");
-        boolean builtinDragon = index == 0 && (uri == null || uri.isEmpty());
-        String imageState = builtinDragon
-                ? "встроенный 4K-оригинал"
-                : uri == null || uri.isEmpty() ? "изображение не выбрано" : "изображение выбрано";
-        String depthState = builtinDragon
-                ? "встроенная карта глубины"
-                : depthUri == null || depthUri.isEmpty()
+        String imageState = uri == null || uri.isEmpty()
+                ? "изображение не выбрано"
+                : "изображение выбрано";
+        String depthState = depthUri == null || depthUri.isEmpty()
                 ? "обычный плоский параллакс"
                 : "карта глубины выбрана";
         return ParallaxWallpaperService.sceneName(index) + ": "

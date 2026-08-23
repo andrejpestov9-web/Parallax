@@ -14,6 +14,11 @@ import xml.etree.ElementTree as ET
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DRAGON_SOURCE_SHA256 = "d7ed8651d5eb61d9fb1b6c6d757cee7b16ebcbc8ff5b72795359cd1b48599234"
 DRAGON_DEPTH_SHA256 = "898ab5c339c3d3ac4e9de3d8b5c13dbc8801d18e3bc44b3dfc8a31cb478e7116"
+HOLOGRAM_SHA256 = {
+    "left.webp": "33afd3af8b43bb7d660996c1f85854dd225c5ee975cf55e26285225302c65b78",
+    "center.webp": "090e94d8b76898fcfa49d9f42a279d84cb55285c74621fae437da13739fcb931",
+    "right.webp": "81977377c4c3737e485a8e199808730a679336dc0a9a94e56369abf522573dbe",
+}
 
 
 def fail(message: str) -> None:
@@ -41,8 +46,12 @@ def main() -> None:
         activity_path,
         service_path,
         policy_path,
+        ROOT / "app/src/main/java/com/andrej/parallaxwallpaper/HologramBlend.java",
         ROOT / "app/src/main/assets/dragon/source.png",
         ROOT / "app/src/main/assets/dragon/depth.png",
+        ROOT / "app/src/main/assets/dragon_hologram/left.webp",
+        ROOT / "app/src/main/assets/dragon_hologram/center.webp",
+        ROOT / "app/src/main/assets/dragon_hologram/right.webp",
     ]
     for path in required:
         if not path.is_file() or path.stat().st_size == 0:
@@ -63,6 +72,9 @@ def main() -> None:
     expected_images = {
         pathlib.Path("app/src/main/assets/dragon/source.png"),
         pathlib.Path("app/src/main/assets/dragon/depth.png"),
+        pathlib.Path("app/src/main/assets/dragon_hologram/left.webp"),
+        pathlib.Path("app/src/main/assets/dragon_hologram/center.webp"),
+        pathlib.Path("app/src/main/assets/dragon_hologram/right.webp"),
     }
     if set(bundled_images) != expected_images:
         fail(f"unexpected bundled raster assets: {bundled_images}")
@@ -77,6 +89,14 @@ def main() -> None:
         fail("built-in dragon source pixels changed")
     if hashlib.sha256(dragon_depth.read_bytes()).hexdigest() != DRAGON_DEPTH_SHA256:
         fail("built-in dragon depth map changed")
+
+    hologram_root = ROOT / "app/src/main/assets/dragon_hologram"
+    for filename, expected_sha in HOLOGRAM_SHA256.items():
+        payload = (hologram_root / filename).read_bytes()
+        if payload[:4] != b"RIFF" or payload[8:12] != b"WEBP":
+            fail(f"invalid WebP hologram frame: {filename}")
+        if hashlib.sha256(payload).hexdigest() != expected_sha:
+            fail(f"locked hologram frame changed: {filename}")
 
     manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
     if "android.permission.INTERNET" in manifest:
@@ -104,6 +124,8 @@ def main() -> None:
         fail("real-time depth mesh renderer is missing")
     if "BUILTIN_DRAGON_SOURCE" not in service or "BUILTIN_DRAGON_DEPTH" not in service:
         fail("built-in dragon assets are not wired to the engine")
+    if "BUILTIN_DRAGON_HOLOGRAM" not in service or "HologramBlend.fillWeights" not in service:
+        fail("three-state gyroscope hologram is not wired to the engine")
 
     digest = hashlib.sha256()
     for path in sorted(path for path in ROOT.rglob("*") if path.is_file()):
@@ -114,10 +136,12 @@ def main() -> None:
 
     print("PASS: XML parses")
     print("PASS: locked 4K dragon and matching depth map are bundled")
+    print("PASS: locked throne/standing/dragon hologram frames are bundled")
     print("PASS: no network permission or URL")
     print("PASS: required wallpaper components exist")
     print("PASS: four-scene auto/pages/random selection is present")
     print("PASS: real-time protected depth mesh is present")
+    print("PASS: three-state gyroscope transformation is present")
     print(f"PROJECT_SHA256: {digest.hexdigest()}")
 
 

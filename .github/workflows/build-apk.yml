@@ -37,6 +37,14 @@ jobs:
             tools/SceneSelectionPolicyTest.java
           java -cp build/host-tests SceneSelectionPolicyTest
 
+      - name: Test three-state hologram mapping
+        run: |
+          mkdir -p build/host-tests
+          javac -d build/host-tests \
+            app/src/main/java/com/andrej/parallaxwallpaper/HologramBlend.java \
+            tools/HologramBlendTest.java
+          java -cp build/host-tests HologramBlendTest
+
       - name: Install Android platform
         run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
@@ -53,6 +61,9 @@ jobs:
           test -s app/build/outputs/apk/debug/app-debug.apk
           unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'assets/dragon/source.png'
           unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'assets/dragon/depth.png'
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'assets/dragon_hologram/left.webp'
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'assets/dragon_hologram/center.webp'
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'assets/dragon_hologram/right.webp'
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs \
             app/build/outputs/apk/debug/app-debug.apk
 

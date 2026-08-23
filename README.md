@@ -2,8 +2,13 @@
 
 Android live wallpaper for four gyroscope-controlled mythic-beast scenes.
 
-Version 0.3 includes the locked 4K dragon source and its protected depth map.
-The other scenes can use an image alone or an image plus its matching depth map.
+Version 0.4 replaces the old Dragon depth warp with a true three-state tilt effect:
+woman on the throne at the left extreme, standing woman in mist at the calibrated
+center, and the full Azure Dragon at the right extreme. The three locked frames are
+crossfaded directly from the rotation-vector sensor without generated intermediate
+frames or anatomy warping.
+
+The other beast scenes can still use an image alone or an image plus its matching depth map.
 Files selected through Android's system picker are opened read-only and are never
 edited, recompressed, overwritten, or uploaded.
 
@@ -11,13 +16,14 @@ edited, recompressed, overwritten, or uploaded.
 
 - Android 8.0+ (`minSdk 26`), optimized for Android 12 / JOYUI.
 - Four independent image/depth slots with a single decoded scene kept in memory.
-- Built-in 4K dragon scene works immediately after installation.
+- Built-in three-frame Dragon transformation works immediately after installation.
 - Auto selection: launcher pages when available, random fallback otherwise.
 - Explicit page and random modes, plus manual random scene switching.
 - Smooth 280 ms crossfade when the active animal changes.
 - Game rotation-vector sensor with rotation-vector fallback.
 - Neutral-position calibration, dead zone, low-pass smoothing, movement clamp.
-- Real-time 32×58 depth mesh on Hardware Canvas with software fallback.
+- Direct gyroscope blend for the Dragon; no depth-mesh distortion on its character art.
+- Real-time 32×58 depth mesh remains available for the other scenes.
 - Cover-scale plus overscan so tilt does not expose empty borders.
 - Runtime sensitivity, strength, and axis inversion controls.
 - No network permission and no third-party runtime dependencies.
