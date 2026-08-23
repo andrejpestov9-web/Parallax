@@ -39,6 +39,14 @@ When a depth map is present, background, subject, and foreground move with
 different amplitudes in real time. Scenes without a depth map safely fall back
 to single-plane motion.
 
+## JOYUI installation check
+
+Open `4. ДИАГНОСТИКА JOYUI` in the app. A healthy firmware reports the Parallax
+WallpaperService as declared, enabled, exported, and discoverable. The same screen lists every
+activity exposed for direct live-wallpaper confirmation and copies the full report for support.
+Google Wallpapers is treated as a trusted fallback even when it is installed as a user app;
+unrelated wallpaper apps are not allowed to capture the request.
+
 ## Build
 
 ```bash
