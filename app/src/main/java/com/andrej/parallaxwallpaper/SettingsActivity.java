@@ -10,6 +10,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -76,6 +77,29 @@ public final class SettingsActivity extends Activity {
         );
         sensorStatus.setPadding(0, 0, 0, dp(14));
         root.addView(sensorStatus, matchWrap());
+
+        addSectionTitle(root, "Установка живых обоев");
+
+        Button systemChooser = button("1. ОТКРЫТЬ СПИСОК ЖИВЫХ ОБОЕВ");
+        systemChooser.setOnClickListener(v -> openSystemLiveWallpaperList());
+        root.addView(systemChooser, matchWrapWithMargin(6));
+
+        Button directPreview = button("2. ОТКРЫТЬ PARALLAX НАПРЯМУЮ");
+        directPreview.setOnClickListener(v -> openDirectWallpaperPreview());
+        root.addView(directPreview, matchWrapWithMargin(6));
+
+        Button joyuiSettings = button("3. ОТКРЫТЬ НАСТРОЙКИ ОБОЕВ JOYUI");
+        joyuiSettings.setOnClickListener(v -> openJoyuiWallpaperSettings());
+        root.addView(joyuiSettings, matchWrapWithMargin(6));
+
+        TextView installHint = text(
+                "Сначала нажмите кнопку 1 и выберите Parallax. Если JOYUI не откроет " +
+                        "список, используйте кнопку 2. Кнопка 3 — системный запасной путь.",
+                13,
+                Color.rgb(255, 210, 130)
+        );
+        installHint.setPadding(0, dp(8), 0, dp(8));
+        root.addView(installHint, matchWrap());
 
         addSectionTitle(root, "Изображения зверей");
         for (int index = 0; index < SceneSelectionPolicy.SCENE_COUNT; index++) {
@@ -194,10 +218,6 @@ public final class SettingsActivity extends Activity {
         });
         root.addView(recenter, matchWrapWithMargin(12));
 
-        Button apply = button("Открыть предпросмотр живых обоев");
-        apply.setOnClickListener(v -> openWallpaperPreview());
-        root.addView(apply, matchWrapWithMargin(12));
-
         TextView hint = text(
                 "Для режима по экранам создайте четыре страницы рабочего стола. " +
                         "Если JOYUI не передаёт их смещение, режим «Автоматически» " +
@@ -264,14 +284,46 @@ public final class SettingsActivity extends Activity {
         sceneLabels[sceneIndex].setText(sceneImageText(sceneIndex));
     }
 
-    private void openWallpaperPreview() {
+    private void openSystemLiveWallpaperList() {
+        try {
+            startActivity(new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER));
+        } catch (Exception exception) {
+            Toast.makeText(
+                    this,
+                    "JOYUI не открыла список. Нажмите кнопку 2.",
+                    Toast.LENGTH_LONG
+            ).show();
+        }
+    }
+
+    private void openDirectWallpaperPreview() {
         ComponentName component = new ComponentName(this, ParallaxWallpaperService.class);
         Intent intent = new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER);
         intent.putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, component);
         try {
             startActivity(intent);
         } catch (Exception exception) {
-            startActivity(new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER));
+            Toast.makeText(
+                    this,
+                    "Прямой просмотр заблокирован JOYUI. Нажмите кнопку 3.",
+                    Toast.LENGTH_LONG
+            ).show();
+        }
+    }
+
+    private void openJoyuiWallpaperSettings() {
+        try {
+            startActivity(new Intent(Settings.ACTION_WALLPAPER_SETTINGS));
+        } catch (Exception firstFailure) {
+            try {
+                startActivity(new Intent(Intent.ACTION_SET_WALLPAPER));
+            } catch (Exception secondFailure) {
+                Toast.makeText(
+                        this,
+                        "JOYUI не предоставляет системный экран установки живых обоев.",
+                        Toast.LENGTH_LONG
+                ).show();
+            }
         }
     }
 
