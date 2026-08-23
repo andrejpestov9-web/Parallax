@@ -2,8 +2,8 @@
 
 Android live wallpaper for four gyroscope-controlled mythic-beast scenes.
 
-Version 0.5.0 keeps the true three-state Dragon tilt effect and adds JOYUI-specific
-installer diagnostics plus a trusted Google Wallpapers fallback:
+Version 0.5.1 keeps the true three-state Dragon tilt effect and adds JOYUI-specific
+deep installer diagnostics plus trusted Google Wallpapers, ThemeManager, and MiWallpaper checks:
 woman on the throne at the left extreme, standing woman in mist at the calibrated
 center, and the full Azure Dragon at the right extreme. The three locked frames are
 crossfaded directly from the rotation-vector sensor without generated intermediate
@@ -23,7 +23,10 @@ edited, recompressed, overwritten, or uploaded.
 - Play-Store-installed Google Wallpapers is allowed as a trusted installer without allowing
   Wallcraft or other third-party apps to capture the request.
 - On-device JOYUI diagnostics verifies the Parallax WallpaperService registration, firmware
-  features, installed picker packages, and every exposed installer activity.
+  features, installed picker packages, and wallpaper-related activities declared inside
+  Google Wallpapers, ThemeManager, and MiWallpaper.
+- One-tap access to Google Wallpapers app details makes clearing a stale picker cache possible
+  without changing any Parallax image or animation asset.
 - Auto selection: launcher pages when available, random fallback otherwise.
 - Explicit page and random modes, plus manual random scene switching.
 - Smooth 280 ms crossfade when the active animal changes.
