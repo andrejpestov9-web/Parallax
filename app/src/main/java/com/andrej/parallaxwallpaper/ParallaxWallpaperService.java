@@ -39,12 +39,19 @@ public final class ParallaxWallpaperService extends WallpaperService {
 
     private static final String KEY_IMAGE_URI_LEGACY = "image_uri";
     private static final String KEY_IMAGE_URI_PREFIX = "image_uri_";
+    private static final String KEY_DEPTH_URI_PREFIX = "depth_uri_";
+    private static final String BUILTIN_DRAGON_SOURCE = "dragon/source.png";
+    private static final String BUILTIN_DRAGON_DEPTH = "dragon/depth.png";
     private static final String[] SCENE_NAMES = {
             "Дракон", "Тигр", "Черепаха и Змея", "Птица"
     };
 
     public static String imageKey(int index) {
         return KEY_IMAGE_URI_PREFIX + clampSceneIndex(index);
+    }
+
+    public static String depthKey(int index) {
+        return KEY_DEPTH_URI_PREFIX + clampSceneIndex(index);
     }
 
     public static String sceneName(int index) {
@@ -76,12 +83,16 @@ public final class ParallaxWallpaperService extends WallpaperService {
         private static final float MAX_ANGLE_RAD = (float) Math.toRadians(8.0);
         private static final float DEAD_ZONE_RAD = (float) Math.toRadians(0.25);
         private static final float FILTER_ALPHA = 0.12f;
+        private static final int MESH_WIDTH = 32;
+        private static final int MESH_HEIGHT = 58;
+        private static final int MESH_VERTEX_COUNT = (MESH_WIDTH + 1) * (MESH_HEIGHT + 1);
 
         private final Handler mainHandler = new Handler(Looper.getMainLooper());
         private final ExecutorService imageLoader = Executors.newSingleThreadExecutor();
         private final Paint imagePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
         private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Matrix imageMatrix = new Matrix();
+        private final float[] meshVertices = new float[MESH_VERTEX_COUNT * 2];
         private final float[] rotationMatrix = new float[9];
         private final float[] remappedMatrix = new float[9];
         private final float[] orientation = new float[3];
@@ -93,6 +104,8 @@ public final class ParallaxWallpaperService extends WallpaperService {
 
         private Bitmap sourceBitmap;
         private Bitmap transitionBitmap;
+        private float[] sourceDepthGrid;
+        private float[] transitionDepthGrid;
         private long transitionStartedAt;
         private boolean visible;
         private boolean destroyed;
@@ -258,8 +271,11 @@ public final class ParallaxWallpaperService extends WallpaperService {
 
         @Override
         public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
-            if (key != null && key.startsWith(KEY_IMAGE_URI_PREFIX)) {
+            if (key != null && (key.startsWith(KEY_IMAGE_URI_PREFIX)
+                    || key.startsWith(KEY_DEPTH_URI_PREFIX))) {
                 if (key.equals(imageKey(activeSceneIndex))) {
+                    loadActiveScene();
+                } else if (key.equals(depthKey(activeSceneIndex))) {
                     loadActiveScene();
                 } else if (!isSceneConfigured(activeSceneIndex)) {
                     selectSceneForCurrentState(true);
@@ -317,6 +333,7 @@ public final class ParallaxWallpaperService extends WallpaperService {
 
         private boolean isSceneConfigured(int index) {
             if (index < 0 || index >= SceneSelectionPolicy.SCENE_COUNT) return false;
+            if (index == 0) return true;
             String value = preferences.getString(imageKey(index), "");
             return value != null && !value.isEmpty();
         }
@@ -332,15 +349,32 @@ public final class ParallaxWallpaperService extends WallpaperService {
             final int requestedScene = activeSceneIndex;
             final int generation = ++loadGeneration;
             String value = preferences.getString(imageKey(requestedScene), "");
-            if (value == null || value.isEmpty()) {
-                replaceBitmap(null);
+            final boolean useBuiltinDragon = requestedScene == 0
+                    && (value == null || value.isEmpty());
+            if (!useBuiltinDragon && (value == null || value.isEmpty())) {
+                replaceBitmap(null, null);
                 return;
             }
 
-            final Uri uri = Uri.parse(value);
+            final Uri uri = useBuiltinDragon ? null : Uri.parse(value);
+            String depthValue = preferences.getString(depthKey(requestedScene), "");
+            final Uri depthUri = useBuiltinDragon || depthValue == null || depthValue.isEmpty()
+                    ? null
+                    : Uri.parse(depthValue);
             imageLoader.submit(() -> {
                 Bitmap decoded = null;
-                try (InputStream stream = getContentResolver().openInputStream(uri)) {
+                float[] loadedDepth = null;
+                try (InputStream depthStream = useBuiltinDragon
+                        ? getAssets().open(BUILTIN_DRAGON_DEPTH)
+                        : depthUri == null ? null
+                        : getContentResolver().openInputStream(depthUri)) {
+                    if (depthStream != null) loadedDepth = decodeDepthGrid(depthStream);
+                } catch (Exception ignored) {
+                    // A missing depth map safely falls back to flat image motion.
+                }
+                try (InputStream stream = useBuiltinDragon
+                        ? getAssets().open(BUILTIN_DRAGON_SOURCE)
+                        : getContentResolver().openInputStream(uri)) {
                     BitmapFactory.Options options = new BitmapFactory.Options();
                     options.inPreferredConfig = Bitmap.Config.ARGB_8888;
                     decoded = BitmapFactory.decodeStream(stream, null, options);
@@ -348,26 +382,61 @@ public final class ParallaxWallpaperService extends WallpaperService {
                     // The placeholder remains visible if access was revoked or decoding failed.
                 }
                 final Bitmap loaded = decoded;
+                final float[] finalDepth = loadedDepth;
                 mainHandler.post(() -> {
                     if (destroyed || generation != loadGeneration
                             || requestedScene != activeSceneIndex) {
                         recycle(loaded);
                         return;
                     }
-                    replaceBitmap(loaded);
+                    replaceBitmap(loaded, finalDepth);
                 });
             });
         }
 
-        private void replaceBitmap(Bitmap loaded) {
+        private float[] decodeDepthGrid(InputStream stream) {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            options.inSampleSize = 4;
+            Bitmap depthBitmap = BitmapFactory.decodeStream(stream, null, options);
+            if (depthBitmap == null) return null;
+            try {
+                float[] result = new float[MESH_VERTEX_COUNT];
+                int index = 0;
+                for (int row = 0; row <= MESH_HEIGHT; row++) {
+                    int y = Math.min(
+                            depthBitmap.getHeight() - 1,
+                            Math.round((float) row / MESH_HEIGHT
+                                    * (depthBitmap.getHeight() - 1))
+                    );
+                    for (int column = 0; column <= MESH_WIDTH; column++) {
+                        int x = Math.min(
+                                depthBitmap.getWidth() - 1,
+                                Math.round((float) column / MESH_WIDTH
+                                        * (depthBitmap.getWidth() - 1))
+                        );
+                        result[index++] = Color.red(depthBitmap.getPixel(x, y)) / 255f;
+                    }
+                }
+                return result;
+            } finally {
+                recycle(depthBitmap);
+            }
+        }
+
+        private void replaceBitmap(Bitmap loaded, float[] loadedDepth) {
             recycle(transitionBitmap);
             transitionBitmap = null;
+            transitionDepthGrid = null;
             if (loaded == null) {
                 recycle(sourceBitmap);
                 sourceBitmap = null;
+                sourceDepthGrid = null;
             } else {
                 transitionBitmap = sourceBitmap;
+                transitionDepthGrid = sourceDepthGrid;
                 sourceBitmap = loaded;
+                sourceDepthGrid = loadedDepth;
                 transitionStartedAt = SystemClock.uptimeMillis();
             }
             drawFrame();
@@ -378,6 +447,8 @@ public final class ParallaxWallpaperService extends WallpaperService {
             recycle(transitionBitmap);
             sourceBitmap = null;
             transitionBitmap = null;
+            sourceDepthGrid = null;
+            transitionDepthGrid = null;
         }
 
         private void recycle(Bitmap bitmap) {
@@ -411,18 +482,25 @@ public final class ParallaxWallpaperService extends WallpaperService {
             float progress = Math.max(0f, Math.min(1f, (float) elapsed / CROSSFADE_MS));
 
             if (transitionBitmap != null && !transitionBitmap.isRecycled() && progress < 1f) {
-                drawBitmapWithMotion(canvas, transitionBitmap, 255);
-                drawBitmapWithMotion(canvas, sourceBitmap, Math.round(progress * 255f));
+                drawBitmapWithMotion(canvas, transitionBitmap, transitionDepthGrid, 255);
+                drawBitmapWithMotion(
+                        canvas,
+                        sourceBitmap,
+                        sourceDepthGrid,
+                        Math.round(progress * 255f)
+                );
             } else {
                 if (transitionBitmap != null) {
                     recycle(transitionBitmap);
                     transitionBitmap = null;
+                    transitionDepthGrid = null;
                 }
-                drawBitmapWithMotion(canvas, sourceBitmap, 255);
+                drawBitmapWithMotion(canvas, sourceBitmap, sourceDepthGrid, 255);
             }
         }
 
-        private void drawBitmapWithMotion(Canvas canvas, Bitmap bitmap, int alpha) {
+        private void drawBitmapWithMotion(Canvas canvas, Bitmap bitmap,
+                                          float[] depthGrid, int alpha) {
             int width = canvas.getWidth();
             int height = canvas.getHeight();
             float sensitivity = preferences.getFloat(KEY_SENSITIVITY, 1.0f);
@@ -432,10 +510,6 @@ public final class ParallaxWallpaperService extends WallpaperService {
 
             float normalizedX = clamp(filteredRoll * sensitivity / MAX_ANGLE_RAD, -1f, 1f);
             float normalizedY = clamp(filteredPitch * sensitivity / MAX_ANGLE_RAD, -1f, 1f);
-            float moveX = -xSign * normalizedX * width * strength
-                    - launcherOffset * width * 0.012f;
-            float moveY = ySign * normalizedY * height * strength * 0.55f;
-
             float coverScale = Math.max(
                     (float) width / bitmap.getWidth(),
                     (float) height / bitmap.getHeight()
@@ -444,14 +518,47 @@ public final class ParallaxWallpaperService extends WallpaperService {
             float scaledWidth = bitmap.getWidth() * overscanScale;
             float scaledHeight = bitmap.getHeight() * overscanScale;
 
-            imageMatrix.reset();
-            imageMatrix.postScale(overscanScale, overscanScale);
-            imageMatrix.postTranslate(
-                    (width - scaledWidth) * 0.5f + moveX,
-                    (height - scaledHeight) * 0.5f + moveY
-            );
             imagePaint.setAlpha(alpha);
-            canvas.drawBitmap(bitmap, imageMatrix, imagePaint);
+            if (depthGrid == null || depthGrid.length != MESH_VERTEX_COUNT) {
+                float moveX = -xSign * normalizedX * width * strength
+                        - launcherOffset * width * 0.012f;
+                float moveY = ySign * normalizedY * height * strength * 0.55f;
+                imageMatrix.reset();
+                imageMatrix.postScale(overscanScale, overscanScale);
+                imageMatrix.postTranslate(
+                        (width - scaledWidth) * 0.5f + moveX,
+                        (height - scaledHeight) * 0.5f + moveY
+                );
+                canvas.drawBitmap(bitmap, imageMatrix, imagePaint);
+            } else {
+                float originX = (width - scaledWidth) * 0.5f;
+                float originY = (height - scaledHeight) * 0.5f;
+                int vertex = 0;
+                for (int row = 0; row <= MESH_HEIGHT; row++) {
+                    float v = (float) row / MESH_HEIGHT;
+                    for (int column = 0; column <= MESH_WIDTH; column++) {
+                        float u = (float) column / MESH_WIDTH;
+                        float depthWeight = 0.18f + 0.82f * depthGrid[vertex];
+                        float moveX = -xSign * normalizedX * width * strength * depthWeight
+                                - launcherOffset * width * 0.012f;
+                        float moveY = ySign * normalizedY * height * strength
+                                * 0.55f * depthWeight;
+                        meshVertices[vertex * 2] = originX + u * scaledWidth + moveX;
+                        meshVertices[vertex * 2 + 1] = originY + v * scaledHeight + moveY;
+                        vertex++;
+                    }
+                }
+                canvas.drawBitmapMesh(
+                        bitmap,
+                        MESH_WIDTH,
+                        MESH_HEIGHT,
+                        meshVertices,
+                        0,
+                        null,
+                        0,
+                        imagePaint
+                );
+            }
             imagePaint.setAlpha(255);
         }
 

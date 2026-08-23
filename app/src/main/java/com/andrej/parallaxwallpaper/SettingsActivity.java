@@ -25,6 +25,7 @@ import android.widget.Toast;
 /** On-device configuration screen with four independent wallpaper scenes. */
 public final class SettingsActivity extends Activity {
     private static final int REQUEST_IMAGE_BASE = 1100;
+    private static final int REQUEST_DEPTH_BASE = 1200;
 
     private SharedPreferences preferences;
     private final TextView[] sceneLabels = new TextView[SceneSelectionPolicy.SCENE_COUNT];
@@ -85,6 +86,24 @@ public final class SettingsActivity extends Activity {
             Button choose = button("Выбрать: " + ParallaxWallpaperService.sceneName(index));
             choose.setOnClickListener(v -> chooseImage(sceneIndex));
             root.addView(choose, matchWrapWithMargin(5));
+
+            Button chooseDepth = button(
+                    "Выбрать карту глубины: " + ParallaxWallpaperService.sceneName(index)
+            );
+            chooseDepth.setOnClickListener(v -> chooseDepthMap(sceneIndex));
+            root.addView(chooseDepth, matchWrapWithMargin(5));
+
+            if (index == 0) {
+                Button restoreDragon = button("Вернуть встроенного 4K-дракона");
+                restoreDragon.setOnClickListener(v -> {
+                    preferences.edit()
+                            .remove(ParallaxWallpaperService.imageKey(0))
+                            .remove(ParallaxWallpaperService.depthKey(0))
+                            .apply();
+                    sceneLabels[0].setText(sceneImageText(0));
+                });
+                root.addView(restoreDragon, matchWrapWithMargin(5));
+            }
         }
 
         addSectionTitle(root, "Как переключать зверей");
@@ -200,18 +219,28 @@ public final class SettingsActivity extends Activity {
     }
 
     private void chooseImage(int sceneIndex) {
+        choosePng(REQUEST_IMAGE_BASE + sceneIndex);
+    }
+
+    private void chooseDepthMap(int sceneIndex) {
+        choosePng(REQUEST_DEPTH_BASE + sceneIndex);
+    }
+
+    private void choosePng(int requestCode) {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("image/*");
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                 | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        startActivityForResult(intent, REQUEST_IMAGE_BASE + sceneIndex);
+        startActivityForResult(intent, requestCode);
     }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        int sceneIndex = requestCode - REQUEST_IMAGE_BASE;
+        boolean depthRequest = requestCode >= REQUEST_DEPTH_BASE
+                && requestCode < REQUEST_DEPTH_BASE + SceneSelectionPolicy.SCENE_COUNT;
+        int sceneIndex = requestCode - (depthRequest ? REQUEST_DEPTH_BASE : REQUEST_IMAGE_BASE);
         if (sceneIndex < 0 || sceneIndex >= SceneSelectionPolicy.SCENE_COUNT
                 || resultCode != RESULT_OK || data == null) return;
         Uri uri = data.getData();
@@ -224,10 +253,14 @@ public final class SettingsActivity extends Activity {
         } catch (SecurityException ignored) {
             // The current grant remains usable for providers without persistence.
         }
-        preferences.edit().putString(
-                ParallaxWallpaperService.imageKey(sceneIndex),
-                uri.toString()
-        ).apply();
+        SharedPreferences.Editor editor = preferences.edit();
+        if (depthRequest) {
+            editor.putString(ParallaxWallpaperService.depthKey(sceneIndex), uri.toString());
+        } else {
+            editor.putString(ParallaxWallpaperService.imageKey(sceneIndex), uri.toString());
+            editor.remove(ParallaxWallpaperService.depthKey(sceneIndex));
+        }
+        editor.apply();
         sceneLabels[sceneIndex].setText(sceneImageText(sceneIndex));
     }
 
@@ -244,8 +277,18 @@ public final class SettingsActivity extends Activity {
 
     private String sceneImageText(int index) {
         String uri = preferences.getString(ParallaxWallpaperService.imageKey(index), "");
+        String depthUri = preferences.getString(ParallaxWallpaperService.depthKey(index), "");
+        boolean builtinDragon = index == 0 && (uri == null || uri.isEmpty());
+        String imageState = builtinDragon
+                ? "встроенный 4K-оригинал"
+                : uri == null || uri.isEmpty() ? "изображение не выбрано" : "изображение выбрано";
+        String depthState = builtinDragon
+                ? "встроенная карта глубины"
+                : depthUri == null || depthUri.isEmpty()
+                ? "обычный плоский параллакс"
+                : "карта глубины выбрана";
         return ParallaxWallpaperService.sceneName(index) + ": "
-                + (uri == null || uri.isEmpty() ? "не выбрано" : "изображение выбрано");
+                + imageState + " · " + depthState;
     }
 
     private void addSeekBar(LinearLayout root, String label, int min, int max,

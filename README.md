@@ -2,28 +2,29 @@
 
 Android live wallpaper for four gyroscope-controlled mythic-beast scenes.
 
-The APK deliberately contains no user artwork. The settings screen asks Android's
-system file picker for read-only access to four images (Dragon, Tiger, Turtle and
-Snake, Bird). Selected originals are decoded into memory and are never edited,
-recompressed, overwritten, uploaded, or copied into the app.
+Version 0.3 includes the locked 4K dragon source and its protected depth map.
+The other scenes can use an image alone or an image plus its matching depth map.
+Files selected through Android's system picker are opened read-only and are never
+edited, recompressed, overwritten, or uploaded.
 
 ## Current engine
 
 - Android 8.0+ (`minSdk 26`), optimized for Android 12 / JOYUI.
-- Four independent image slots with a single decoded scene kept in memory.
+- Four independent image/depth slots with a single decoded scene kept in memory.
+- Built-in 4K dragon scene works immediately after installation.
 - Auto selection: launcher pages when available, random fallback otherwise.
 - Explicit page and random modes, plus manual random scene switching.
 - Smooth 280 ms crossfade when the active animal changes.
 - Game rotation-vector sensor with rotation-vector fallback.
 - Neutral-position calibration, dead zone, low-pass smoothing, movement clamp.
-- Hardware Canvas with software fallback.
+- Real-time 32×58 depth mesh on Hardware Canvas with software fallback.
 - Cover-scale plus overscan so tilt does not expose empty borders.
 - Runtime sensitivity, strength, and axis inversion controls.
 - No network permission and no third-party runtime dependencies.
 
-The current renderer applies single-plane gyroscope motion. The engine is ready
-for the next stage: replacing each flat scene with protected foreground/subject/
-background layers for true 2.5D depth.
+When a depth map is present, background, subject, and foreground move with
+different amplitudes in real time. Scenes without a depth map safely fall back
+to single-plane motion.
 
 ## Build
 
