@@ -57,7 +57,7 @@ jobs:
           cp /tmp/kustom-api/api/src/main/java/org/kustom/api/Provider.java app/src/main/java/org/kustom/api/
           cp /tmp/kustom-api/api/src/main/java/org/kustom/api/CacheHelper.java app/src/main/java/org/kustom/api/
           cp /tmp/kustom-api/api/src/main/java/org/kustom/api/FileInfo.java app/src/main/java/org/kustom/api/
-          sed -i '/androidx.annotation/d; s/@NonNull //g; s/@Nullable //g' \
+          sed -i '/androidx.annotation/d; s/@NonNull//g; s/@Nullable//g' \
             app/src/main/java/org/kustom/api/Provider.java
 
       - name: Set up Gradle 8.7
